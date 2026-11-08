@@ -1,0 +1,112 @@
+:root {
+  color-scheme: light;
+  --ink: #000;
+  --ink-soft: var(--ink);
+  --muted: var(--ink);
+  --sidebar-ink: var(--ink);
+  --sidebar-muted: var(--ink);
+  --brand-ink: var(--ink);
+  --brand: #54D81B;
+  --brand-rgb: 84, 216, 27;
+  --brand-strong: #2f7912;
+  --brand-soft: #e9f9e2;
+  --brand-tint: #f3fbef;
+  --brand-border: #b4d9a6;
+  --brand-line: #6aa84e;
+  --primary-bg: var(--brand);
+  --primary-hover: #70e83a;
+  --brand-hover: var(--primary-hover);
+  --brand-shadow: rgba(var(--shadow-rgb), .15);
+  --sidebar-bg: #eff7e9;
+  --app-bg: #f1f4ee;
+  --surface-soft: #f6f8f3;
+  --paper: #fff;
+  --input-bg: #fff;
+  --disabled-bg: #e3e9df;
+  --line: #d1d9cb;
+  --code-bg: #edf1e9;
+  --danger: #a8251a;
+  --danger-soft: #fff0ed;
+  --danger-border: #e4b4ac;
+  --overlay: rgba(0, 0, 0, .38);
+  --grid-dot: #d5dfce;
+  --shadow-rgb: 21, 36, 17;
+  --focus-ring: rgba(var(--brand-rgb), .5);
+  --gate-bg: radial-gradient(ellipse at 50% 12%, var(--brand-soft), var(--surface-soft) 48%, var(--app-bg));
+  --accent: var(--brand-strong);
+  --accent-soft: var(--brand-soft);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --ink: #d4d4d4;
+  --brand-strong: #8bdc69;
+  --brand-soft: #23341e;
+  --brand-tint: #1c281a;
+  --brand-border: #3c6130;
+  --brand-line: #668c54;
+  --primary-bg: #244b1a;
+  --primary-hover: #2f5a24;
+  --sidebar-bg: #182016;
+  --app-bg: #111610;
+  --surface-soft: #1e241e;
+  --paper: #171b17;
+  --input-bg: #121612;
+  --disabled-bg: #2b322a;
+  --line: #3d453d;
+  --code-bg: #20281f;
+  --danger: #ff9b8e;
+  --danger-soft: #351d1a;
+  --danger-border: #754238;
+  --overlay: rgba(0, 0, 0, .7);
+  --grid-dot: #344330;
+  --shadow-rgb: 0, 0, 0;
+}
+
+html, body { color: var(--ink); background: var(--app-bg); }
+button, input, select, textarea, option { color: var(--ink); }
+input, textarea { caret-color: var(--ink); }
+input::placeholder, textarea::placeholder { color: var(--ink); opacity: 1; }
+option { background: var(--input-bg); }
+input:-webkit-autofill {
+  -webkit-text-fill-color: var(--ink);
+  box-shadow: 0 0 0 1000px var(--input-bg) inset;
+  caret-color: var(--ink);
+}
+::selection { color: var(--ink); background: var(--brand-soft); }
+
+button:disabled, input:disabled, select:disabled, textarea:disabled {
+  opacity: 1;
+  color: var(--ink);
+  -webkit-text-fill-color: var(--ink);
+}
+.create-note-button:disabled, .empty-create-button:disabled, .welcome-create-button:disabled,
+.dialog-submit:disabled, .mindmap-add-root-child:disabled, .vault-primary-button:disabled,
+.vault-secondary-button:disabled, .note-policy-control select:disabled {
+  background: var(--disabled-bg);
+  border-color: var(--line);
+}
+
+.theme-select { display: inline-flex; min-width: 0; max-width: 100%; align-items: center; gap: 8px; color: var(--ink); font-size: 12px; }
+.theme-select select { min-width: 0; min-height: 36px; max-width: 100%; padding: 5px 8px; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; background: var(--input-bg); font: inherit; cursor: pointer; }
+.theme-select select:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+
+.sidebar-theme { display: flex; flex: 0 0 auto; align-self: stretch; justify-content: space-between; margin: auto 9px 12px; padding-top: 16px; }
+.sidebar-theme select { flex: 1; max-width: 140px; }
+.sidebar-theme + .sidebar-bottom { flex-shrink: 0; margin-top: 0; }
+.vault-theme-switch { display: flex; width: 100%; justify-content: flex-end; margin: 0 0 20px; }
+.vault-brand-mark { width: 64px; height: 64px; overflow: hidden; border-color: var(--brand-border); background: var(--paper); }
+.vault-brand-mark img { display: block; width: 54px; height: 54px; object-fit: contain; border-radius: 12px; }
+
+@media (min-width: 761px) and (max-width: 900px) {
+  .sidebar-theme { position: relative; margin-right: 0; margin-left: 0; }
+  .sidebar-theme > span { display: none; }
+  .sidebar-theme select { width: 100%; min-height: 42px; padding: 0; appearance: none; font-size: 0; }
+  .sidebar-theme option { font-size: 12px; }
+  .sidebar-theme::after { position: absolute; right: 0; bottom: 0; left: 0; display: grid; height: 42px; place-items: center; color: var(--ink); content: '◐'; font-size: 22px; pointer-events: none; }
+}
+
+@media (max-width: 760px) {
+  .theme-select { font-size: 14px; }
+  .theme-select select { min-height: 44px; }
+}

@@ -35,6 +35,16 @@ pub struct Note {
     pub content: Value,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyNote {
+    #[serde(flatten)]
+    pub summary: NoteSummary,
+    pub schema_version: i64,
+    pub content: Value,
+    pub deleted_at: Option<String>,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NoteWrite {
@@ -60,4 +70,63 @@ pub struct Attachment {
     pub mime_type: String,
     pub original_name: String,
     pub byte_length: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyAttachment {
+    pub id: String,
+    pub mime_type: String,
+    pub original_name: String,
+    pub byte_length: usize,
+    pub data_base64: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyExport {
+    pub groups: Vec<NoteGroup>,
+    pub notes: Vec<LegacyNote>,
+    pub attachments: Vec<LegacyAttachment>,
+    pub data_directory: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultRecord {
+    pub id: String,
+    pub payload: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultPut {
+    pub id: String,
+    pub payload: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultCommitInput {
+    pub header: Option<String>,
+    pub puts: Vec<VaultPut>,
+    pub deletes: Vec<String>,
+    #[serde(default)]
+    pub purge_legacy: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncHttpInput {
+    pub url: String,
+    pub method: String,
+    pub token: String,
+    pub body: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncHttpResponse {
+    pub status: u16,
+    pub body: String,
 }

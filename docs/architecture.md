@@ -1,49 +1,44 @@
-# 实现边界
+# 加密、同步与平台边界
 
-## 共享文档与平台
+## 本地加密仓库
 
-`WorkspaceRepository` 管理笔记与分组，`AttachmentStore` 处理附件，组件只依赖这两个业务接口。`createNativeAdapter` 统一命令的 JSON 传输格式。数据库时间统一使用 UTC ISO 8601，展示时由客户端转换。
+界面通过 `WorkspaceRepository` 和 `AttachmentStore` 访问 `EncryptedWorkspace`。共享层使用 WebCrypto 加解密；Windows/Android 的 Rust SQLite 和 HarmonyOS 的 ArkData 只保存不透明密文记录。原生命令包括 `vault_header`、`vault_list`、`vault_get`、`vault_commit` 和首次迁移使用的 `vault_legacy_export`。
 
-Windows 和 Android 使用 Rust + bundled SQLite，HarmonyOS 使用 ArkData SQLite。各宿主从应用私有目录打开数据库，通过原生命令访问；Vue 不直接执行 SQL。正常保存使用事务，删除笔记保留 tombstone；删除分组在一个事务里解除笔记归属并删除分组。
+每个空间随机生成 256 位数据密钥。口令经 PBKDF2-HMAC-SHA256（600,000 次、随机 16 字节盐）派生封装密钥，以 AES-256-GCM 包裹数据密钥。标题、正文、预览、分组、附件内容和同步凭据都经过认证加密；每次写入使用独立随机 96 位 nonce，AAD 绑定格式版本、空间 ID 和记录 ID。数据密钥以不可导出的 CryptoKey 留在解锁进程中，口令不持久化。
 
-本地 `revision` 每次保存递增，与未来的 `server_revision` 分离。当前不产生网络请求，也不写入待上传队列。后续启用同步时，只有 `syncPolicy=sync` 的记录才进入队列；提交笔记和对应加密 outbox 记录必须在同一事务中完成。
+`note:`、`group:`、`attachment:` 记录和加密的 `$meta` 写入同一原生事务。`$meta` 保存本地版本、待提交操作、远端版本、游标和同步配置；不能将明文配置、正文或令牌放进浏览器 localStorage。localStorage 只用于非敏感外观偏好。
 
-分组类型预留 `parentId`，首版 UI 只创建平级分组。普通笔记正文使用 Tiptap JSON；`kind=mindmap` 保存 `{ type: 'mindmap', root: { id, text, children } }`。列表与思维树直接操作同一份树，不进行 Markdown/HTML 转换，切换视图不触发正文保存，不重新分配节点 ID。节点的顺序、层级、空文本与多行文本都在树中保存；折叠、缩放和视图选择属于本机展示状态。
+附件单张最多 20 MB，按文件签名识别 PNG/JPEG/GIF/WebP。图片按需读取密文并解密为内存 Blob URL；锁定撤销 URL、释放密钥引用和解密缓存。正文节点只引用 attachmentId，不保存设备路径、明文图片或临时 URL。图片密文不会在启动时全部加载。
 
-新增导图沿用 notes 表现有 kind/content/schema_version、分组外键、版本号和删除标记，不需要改写已有普通笔记或升级数据库表。导图与普通笔记使用相同的保存队列、事务和本地生命周期。界面根据文档类型按需加载对应编辑器。
+首次设置导出旧版分组、全部笔记（含软删除）和附件，完成加密并提交后才清理旧表、WAL 和托管明文附件。迁移失败保留原数据；外部旧备份不由应用改写。Rust schema v2 加入 vault_header/secure_records；HarmonyOS 使用对应 ArkData 表。数据库文件及备份仍须作为完整空间保存。
 
-## 附件
+## 隐私模式
 
-`import_image` 接收名称和字节，检查大小与文件签名，生成随机 ID，并保存到专用附件目录；文件名由程序生成，原名称不参与路径构造。`resolve_image` 根据数据库 ID 查询文件路径，宿主把它映射为 WebView 可读地址。
+每次启动解锁空间，进入隐私区再次验证同一空间口令。普通笔记与隐私笔记共享空间数据密钥。隐私区关闭时，普通列表、搜索和计数不展示私密正文；锁定时卸载编辑器、清空快照与搜索。当前使用手动锁定，不承诺操作系统截图限制或独立硬件密钥库保护。
 
-Windows 使用 `import_image_bytes` 的二进制 IPC，名称通过编码后的 `x-file-name` 头传递，避免把图片膨胀成 JSON 数字数组。Android 的 Tauri 请求体不支持同一套二进制传输，所以保留 JSON 命令；鸿蒙宿主后续可以在 `AttachmentStore` 后接入平台二进制通道。文件大小在读取前和原生接收后分别限制，防止过大图片阻塞窗口。
+普通笔记默认允许同步，私密笔记默认 localOnly。普通笔记改为私密时同步自动关闭；随后只有用户明确开启才能上传。同步策略是笔记级设置，首次发布的附件和分组由可同步笔记的引用集合决定。撤销附件前检查其他同步引用；分组的删除由明确的删除分组操作触发。不会因为某篇私密笔记引用了一张图片，就自动上传该笔记的其他信息。
 
-正文的 image 节点只携带 `attachmentId`、`alt`。节点视图按 ID 解析图片地址，地址不写回文档。因此迁移到其他设备时只需保持附件 ID 并传输文件。
+取消同步通过远端删除标记撤销，并保留本机副本；离线时在恢复同步后完成。删除操作必须来自本机明确删除或撤销同步的持久化意图，不能仅凭当前本地未包含某条记录就向远端删除；接收远端变更不产生新的本机删除意图。已下载的副本、软删除记录和既有备份不能依靠取消同步保证安全擦除。口令和解密密钥不发送到服务端，也没有口令恢复或密钥托管服务。
 
-后续同步先上传附件再提交引用它的文档，下载时允许文档先显示附件占位。需要保存上传队列与下载状态；正文是否已同步和附件是否完整应分别表达。附件不可按单设备当前引用立即永久回收，还需考虑 tombstone、历史版本和离线设备。
+## 密文同步协议
 
-## 跨端接入
+Linux 服务为独立 Rust/Axum/SQLite 应用，Docker 以非 root 用户运行。客户端用随机高熵 capability token 访问指定空间；服务仅保存令牌哈希、封装后的密钥头部、最新密文记录、版本及幂等收据。
 
-- Windows：Tauri IPC + Rust 存储，关闭窗口前等待保存。
-- Android：复用 Web 资源与 Tauri 核心，原生工程位于 `src-tauri/gen/android`；文件选择、系统返回键、后台保存接入原生生命周期。手机使用列表与编辑器单页导航。
-- HarmonyOS：`platforms/harmonyos` 的 ArkTS + ArkWeb 宿主加载打包 Web 资源，以 `inspNative.postMessage` 请求 ID 和 `__inspBridgeResponse` 回调实现异步命令；ArkData 管理分组、笔记和附件，资源拦截器只映射打包资源及应用附件。暂停和退出通过 `__inspBeforeClose` 提交保存。
+- `PUT /v1/spaces/{id}` 创建空间；已存在时验证凭据并返回原头部，不覆盖密钥。
+- `GET /v1/spaces/{id}` 获取空间头部，新设备以连接码和空间口令加入。
+- `POST /v1/spaces/{id}/push` 按 baseRevision 执行 CAS，在同一事务分配 revision 和空间内 sequence。operationId 重试返回已有结果；重用同一 ID 提交不同内容会失败。
+- `GET /v1/spaces/{id}/changes?cursor=...&limit=...` 按 sequence 分页返回最新记录和 tombstone。每页应用结果和游标一起提交本地密文事务。
 
-不要把 Tauri 的 `convertFileSrc` 地址直接用于鸿蒙。ArkWeb 的资源拦截器应只服务应用附件目录，不开放任意文件读取。宿主暂停/退出前调用前端的保存入口；不能依赖 JS 定时器在后台持续执行。
+附件先于分组和笔记上传。服务端每条实体只保留最新记录，删除时移除其当前密文 payload，并保留版本，防止旧客户端按过期 baseRevision 复活数据。请求限 64 MiB、100 条操作，客户端逐条发送大附件。
 
-## 同步契约
+客户端在本地编辑后短暂合并同步，进入前台、恢复网络及前台定时刷新时获取远端变化，也可手动同步。网络失败保留已加密的待提交操作。应用远端变更前先提交编辑器草稿，期间暂停编辑，完成后刷新，避免覆盖未保存输入。冲突保留远端当前版本和本机 localOnly 冲突副本，不按设备时间静默覆盖。
 
-`src/sync/contracts.ts` 定义协议类型，没有运行中的同步引擎、账号服务或加密实现。
+公网同步要求 HTTPS；HTTP 仅供回环和局域网联调。网络请求经 Rust reqwest 或 HarmonyOS NetworkKit 完成，使用系统 TLS 校验，禁止重定向转发凭据；网络期间不持有本地 SQLite 事务。
 
-`SyncTransport.push` 使用 `operationId` 做幂等提交，以 `baseRevision` 进行版本比较。服务端在一个事务中分配实体新 revision 和账号内单调递增 sequence；相同操作重试返回已有结果。版本不一致返回冲突，客户端保留双方内容并建立冲突副本，不按客户端时间戳静默覆盖。
+## 文档与平台
 
-`pull(cursor)` 返回按 sequence 排序的变更与 nextCursor。分页游标和本地应用变更必须一起提交；网络请求不置于数据库事务内。长时间离线设备若超出变更保留窗口，需重新下载当前快照并协调尚未提交的本地编辑。
+普通笔记使用 Tiptap JSON；思维导图使用稳定 ID 的 `{ type: 'mindmap', root: { id, text, children } }`。列表和思维树操作同一数据，不经 Markdown/HTML 转换。视图、折叠和缩放是本机呈现状态。
 
-删除作为可同步 tombstone 传播。已经同步的笔记切换为 localOnly 时，需要一个服务端确认的撤销同步操作，阻止旧设备继续上传该实体，再按产品策略处理远端副本。
+Windows/Android 使用 Tauri IPC，HarmonyOS 用 ArkWeb request ID 和回调桥接。三端共享加密和同步格式。平台退出前等待保存和图片导入；不能依赖后台 JS 定时器持续运行。浅色文字为黑色，暗色为淡灰色，外观可跟随系统或手动选择。
 
-`sync_outbox`、`sync_state` 是空表预留。实现加密后才允许上传：标题、正文、分组名称和附件内容均应进入密文信封；协议暴露必要的路由 ID、版本和序号等元数据。
-
-## 隐私边界
-
-`VaultCrypto` 只是加密/解密/锁定接口，不具备安全性承诺。后续使用经过审查的认证加密与 Argon2id 实现，规定 nonce、AAD、密钥封装、恢复密钥及跨端编码格式，再启用 `private`。
-
-私密空间使用独立密钥；Windows 安全存储、Android Keystore、鸿蒙 HUKS 保护设备密钥材料。锁定时同时处理预览、搜索索引、图片解码缓存、临时文件及后台预览。不得仅隐藏组件而继续把私密正文写入明文 SQLite 或普通搜索索引。
+解锁期间应用进程可访问明文；备份恢复、访问凭据保护和 HTTPS 部署由空间所有者管理。

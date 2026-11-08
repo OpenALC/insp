@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { JSONContent } from '@tiptap/core'
-import type { Note, NoteContent, NoteGroup, NoteKind, NoteSummary, NoteWrite, WorkspaceSnapshot } from './domain/models'
+import type { Note, NoteContent, NoteGroup, NoteKind, NoteSummary, NoteWrite, PrivacyMode, SyncPolicy, WorkspaceSnapshot } from './domain/models'
 import { mindMapText, type MindMapDocument } from './domain/mindmap'
-import { platform, registerCloseGuard } from './platform'
+import { platform, registerCloseGuard, vault } from './platform'
+import VaultPanel from './components/VaultPanel.vue'
+import ThemeSelect from './components/ThemeSelect.vue'
+import inspLogo from './assets/insp-logo.png'
 const RichTextEditor = defineAsyncComponent(() => import('./components/RichTextEditor.vue'))
 const MindMapEditor = defineAsyncComponent(() => import('./components/MindMapEditor.vue'))
 import {
   Archive,
   ArrowLeft,
-  BookOpenText,
   Check,
   ChevronRight,
   CircleAlert,
@@ -19,9 +21,13 @@ import {
   Folder,
   FolderPlus,
   Inbox,
+  KeyRound,
+  LockKeyhole,
   Menu,
   Pencil,
   Search,
+  Settings2,
+  Shield,
   ShieldCheck,
   Trash2,
   Workflow,
@@ -45,6 +51,8 @@ const richEditor = ref<RichTextEditorHandle | null>(null)
 const saveState = ref<SaveState>('saved')
 const actionError = ref('')
 const showError = ref(true)
+const vaultPanelMode = ref<'privacy' | 'sync' | null>(null)
+const vaultInitError = ref('')
 const draftPlainText = ref('')
 const mobilePane = ref<'list' | 'editor'>('list')
 const sidebarOpen = ref(false)
@@ -58,19 +66,25 @@ let saveTimer: ReturnType<typeof setTimeout> | undefined
 let saveQueue: Promise<void> = Promise.resolve()
 let closeGuardUnlisten: (() => void) | undefined
 let transitionWork: Promise<boolean> | null = null
+let remoteRefreshTimer: ReturnType<typeof setInterval> | undefined
+const workspaceAvailable = computed(() => vault.state.ready && vault.state.initialized && !vault.state.locked)
 
 const groups = computed(() => snapshot.value?.groups ?? [])
-const allNotes = computed(() => [...(snapshot.value?.notes ?? [])].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
+const allNotes = computed(() => [...(snapshot.value?.notes ?? [])]
+  .filter((note) => note.privacy === (filterKey.value === 'private' ? 'private' : 'normal'))
+  .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
 const ungroupedCount = computed(() => (snapshot.value?.notes ?? []).filter((note) => note.groupId === null).length)
 const filteredNotes = computed(() => {
   const query = searchQuery.value.trim().toLocaleLowerCase('zh-CN')
   return allNotes.value.filter((note) => {
+    if (filterKey.value === 'private' && note.privacy !== 'private') return false
     if (filterKey.value === 'ungrouped' && note.groupId !== null) return false
     if (filterKey.value.startsWith('group:') && note.groupId !== filterKey.value.slice(6)) return false
     return !query || `${note.title}\n${note.preview}`.toLocaleLowerCase('zh-CN').includes(query)
   })
 })
 const currentFilterName = computed(() => {
+  if (filterKey.value === 'private') return '隐私笔记'
   if (filterKey.value === 'ungrouped') return '未分组'
   if (filterKey.value.startsWith('group:')) return groups.value.find((group) => group.id === filterKey.value.slice(6))?.name ?? '分组'
   return '全部笔记'
@@ -266,25 +280,289 @@ function resetDraftState(note: Note) {
   queuedVersion = 0
   failedVersion = null
   lastSaveError = null
+  saveFailureNoteId = null
   saveState.value = 'saved'
 }
 
+function clearActiveNote() {
+  activeNote.value = null
+  draftPlainText.value = ''
+  draftVersion = 0
+  persistedVersion = 0
+  queuedVersion = 0
+  failedVersion = null
+  lastSaveError = null
+  saveFailureNoteId = null
+  saveState.value = 'saved'
+}
+
+function clearWorkspaceState() {
+  if (saveTimer !== undefined) clearTimeout(saveTimer)
+  saveTimer = undefined
+  snapshot.value = null
+  clearActiveNote()
+  searchQuery.value = ''
+  filterKey.value = 'all'
+  mobilePane.value = 'list'
+  sidebarOpen.value = false
+  groupDialog.value = null
+  vaultPanelMode.value = null
+  actionError.value = ''
+}
+
+async function refreshWorkspace(privateOnly = filterKey.value === 'private') {
+  if (!workspaceAvailable.value) return null
+  if (privateOnly && !vault.state.privateVisible) {
+    clearActiveNote()
+    snapshot.value = null
+    filterKey.value = 'all'
+    searchQuery.value = ''
+    vault.hidePrivate()
+    privateOnly = false
+  }
+  const loaded = await platform.repository.loadWorkspace()
+  if (!workspaceAvailable.value) {
+    clearWorkspaceState()
+    return null
+  }
+  if (privateOnly && !vault.state.privateVisible) {
+    clearActiveNote()
+    snapshot.value = null
+    filterKey.value = 'all'
+    searchQuery.value = ''
+    vault.hidePrivate()
+    return refreshWorkspace(false)
+  }
+  const notes = loaded.notes.filter((note) => note.privacy === (privateOnly ? 'private' : 'normal'))
+  const refreshed = { ...loaded, notes }
+  snapshot.value = refreshed
+  return refreshed
+}
+
+async function loadInitialWorkspace() {
+  clearActiveNote()
+  filterKey.value = 'all'
+  searchQuery.value = ''
+  const loaded = await refreshWorkspace(false)
+  if (!loaded || !workspaceAvailable.value) return
+  const first = [...loaded.notes].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
+  if (!first) return
+  const note = await platform.repository.getNote(first.id)
+  if (workspaceAvailable.value) resetDraftState(note)
+}
+
+async function loadWorkspaceAfterVaultOpen() {
+  vaultPanelMode.value = null
+  vaultInitError.value = ''
+  if (!workspaceAvailable.value) return
+  isLoading.value = true
+  try {
+    await loadInitialWorkspace()
+  } catch (error) {
+    reportError(error)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+async function retryInitialize() {
+  vaultInitError.value = ''
+  isLoading.value = true
+  try {
+    await vault.initialize()
+    vault.hidePrivate()
+    if (workspaceAvailable.value) await loadWorkspaceAfterVaultOpen()
+  } catch (error) {
+    vaultInitError.value = errorText(error)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+async function openPrivateArea() {
+  if (filterKey.value === 'private' || isTransitioning.value) return
+  sidebarOpen.value = false
+  await runTransition(async () => {
+    mobilePane.value = 'list'
+    vaultPanelMode.value = 'privacy'
+  })
+}
+
+async function enterPrivateArea() {
+  vaultPanelMode.value = null
+  filterKey.value = 'private'
+  searchQuery.value = ''
+  mobilePane.value = 'list'
+  clearActiveNote()
+  snapshot.value = null
+  isLoading.value = true
+  try {
+    await refreshWorkspace(true)
+  } catch (error) {
+    reportError(error)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+async function leavePrivateArea(nextFilter = 'all') {
+  if (filterKey.value !== 'private') return
+  await runTransition(async () => {
+    clearActiveNote()
+    snapshot.value = null
+    filterKey.value = nextFilter
+    searchQuery.value = ''
+    mobilePane.value = 'list'
+    sidebarOpen.value = false
+    vault.hidePrivate()
+    isLoading.value = true
+    try {
+      await refreshWorkspace(false)
+    } finally {
+      isLoading.value = false
+    }
+  })
+}
+
+function openSyncSettings() {
+  if (isTransitioning.value || !workspaceAvailable.value) return
+  sidebarOpen.value = false
+  vaultPanelMode.value = 'sync'
+}
+
+async function syncWorkspace() {
+  if (!workspaceAvailable.value || isTransitioning.value || transitionWork) return
+  const activeId = activeNote.value?.id
+  isTransitioning.value = true
+  try {
+    await flushBeforeTransition()
+    await vault.syncNow()
+    isTransitioning.value = true
+    const loaded = await refreshWorkspace(filterKey.value === 'private')
+    const summary = loaded?.notes.find((note) => note.id === activeId)
+    if (summary && activeId) {
+      try {
+        const note = await platform.repository.getNote(activeId)
+        if (workspaceAvailable.value) resetDraftState(note)
+      } catch (error) {
+        clearActiveNote()
+        await refreshWorkspace(filterKey.value === 'private')
+        reportError(error)
+      }
+    } else if (activeId) {
+      clearActiveNote()
+    }
+  } catch (error) {
+    reportError(error)
+  } finally {
+    isTransitioning.value = false
+  }
+}
+
+async function handleOnline() {
+  if (!workspaceAvailable.value || !vault.state.endpoint || vault.state.syncing || isTransitioning.value) return
+  await syncWorkspace()
+}
+
+function refreshRemoteWhenVisible() {
+  if (document.visibilityState !== 'visible' || !workspaceAvailable.value || !vault.state.endpoint || vault.state.syncing || isTransitioning.value || transitionWork) return
+  void vault.syncNow().catch(() => undefined)
+}
+
+async function beforeSyncApply() {
+  await flushBeforeClose()
+  isTransitioning.value = true
+}
+
+async function afterSyncApply() {
+  try {
+    if (!workspaceAvailable.value) {
+      clearWorkspaceState()
+      return
+    }
+    let privateOnly = filterKey.value === 'private'
+    if (privateOnly && !vault.state.privateVisible) {
+      clearActiveNote()
+      snapshot.value = null
+      filterKey.value = 'all'
+      searchQuery.value = ''
+      privateOnly = false
+    }
+    const activeId = activeNote.value?.id
+    const loaded = await refreshWorkspace(privateOnly)
+    const summary = loaded?.notes.find((note) => note.id === activeId)
+    if (!activeId || !summary) {
+      clearActiveNote()
+      mobilePane.value = 'list'
+      return
+    }
+    try {
+      const latest = await platform.repository.getNote(activeId)
+      const expectedPrivacy = privateOnly ? 'private' : 'normal'
+      if (!workspaceAvailable.value || latest.privacy !== expectedPrivacy) {
+        clearActiveNote()
+        mobilePane.value = 'list'
+        return
+      }
+      resetDraftState(latest)
+    } catch (error) {
+      clearActiveNote()
+      mobilePane.value = 'list'
+      await refreshWorkspace(privateOnly)
+      reportError(error)
+    }
+  } catch (error) {
+    clearActiveNote()
+    reportError(error)
+  } finally {
+    isTransitioning.value = false
+  }
+}
+
+async function lockWorkspace() {
+  if (!workspaceAvailable.value || isTransitioning.value || vault.state.syncing) return
+  await runTransition(async () => {
+    clearWorkspaceState()
+    vault.hidePrivate()
+    try {
+      await vault.lock()
+    } catch (error) {
+      if (workspaceAvailable.value) await loadWorkspaceAfterVaultOpen()
+      throw error
+    }
+  })
+}
+
+watch(() => vault.state.locked, (locked) => {
+  if (locked) clearWorkspaceState()
+}, { immediate: true })
+
+watch(workspaceAvailable, (available, wasAvailable) => {
+  if (available && !wasAvailable) void loadWorkspaceAfterVaultOpen()
+})
+
 async function openNote(noteId: string) {
+  if (!workspaceAvailable.value) return
   if (activeNote.value?.id === noteId) {
     mobilePane.value = 'editor'
     return
   }
   await runTransition(async () => {
+    const summary = snapshot.value?.notes.find((item) => item.id === noteId)
+    if (!summary || summary.privacy !== (filterKey.value === 'private' ? 'private' : 'normal')) return
     const note = await platform.repository.getNote(noteId)
+    if (!workspaceAvailable.value || note.privacy !== summary.privacy) return
     resetDraftState(note)
     mobilePane.value = 'editor'
   })
 }
 
 async function createNote(kind: NoteKind = 'richtext') {
+  if (!workspaceAvailable.value) return
   await runTransition(async () => {
     const groupId = filterKey.value.startsWith('group:') ? filterKey.value.slice(6) : null
-    const note = await platform.repository.createNote(groupId, kind)
+    let note = await platform.repository.createNote(filterKey.value === 'private' ? null : groupId, kind)
+    if (filterKey.value === 'private') note = await vault.setNotePolicy(note.id, 'private', 'localOnly')
     if (snapshot.value) snapshot.value = { ...snapshot.value, notes: [summaryFromNote(note), ...snapshot.value.notes] }
     resetDraftState(note)
     mobilePane.value = 'editor'
@@ -333,7 +611,54 @@ async function changeNoteGroup(event: Event) {
   if (!success && activeNote.value) select.value = activeNote.value.groupId ?? ''
 }
 
+async function changeNotePolicy(privacy: PrivacyMode, syncPolicy: SyncPolicy, select?: HTMLSelectElement) {
+  const original = activeNote.value
+  if (!original) return
+  const success = await runTransition(async () => {
+    await flushSaves()
+    const updated = await vault.setNotePolicy(original.id, privacy, syncPolicy)
+    const visiblePrivacy = filterKey.value === 'private' ? 'private' : 'normal'
+    const remainsVisible = updated.privacy === visiblePrivacy
+    snapshot.value = null
+    if (remainsVisible) resetDraftState(updated)
+    else {
+      clearActiveNote()
+      mobilePane.value = 'list'
+    }
+    const loaded = await refreshWorkspace(filterKey.value === 'private')
+    const summary = loaded?.notes.find((item) => item.id === original.id)
+    if (!remainsVisible || !summary || summary.privacy !== privacy) {
+      clearActiveNote()
+      mobilePane.value = 'list'
+      return
+    }
+    resetDraftState(updated)
+  })
+  if (!success && select && activeNote.value) {
+    select.value = select.dataset.policy === 'privacy' ? activeNote.value.privacy : activeNote.value.syncPolicy
+  }
+}
+
+function changePrivacy(event: Event) {
+  const select = event.target as HTMLSelectElement
+  const note = activeNote.value
+  if (!note) return
+  const privacy = select.value as PrivacyMode
+  const syncPolicy = privacy === 'private' && note.privacy === 'normal' ? 'localOnly' : note.syncPolicy
+  void changeNotePolicy(privacy, syncPolicy, select)
+}
+
+function changeSyncPolicy(event: Event) {
+  const select = event.target as HTMLSelectElement
+  const note = activeNote.value
+  if (note) void changeNotePolicy(note.privacy, select.value as SyncPolicy, select)
+}
+
 function chooseFilter(key: string) {
+  if (filterKey.value === 'private' && key !== 'private') {
+    void leavePrivateArea(key)
+    return
+  }
   filterKey.value = key
   sidebarOpen.value = false
   mobilePane.value = 'list'
@@ -344,7 +669,10 @@ async function showNoteList() {
 }
 
 function navigateBack(event: Event) {
-  if (groupDialog.value) {
+  if (vaultPanelMode.value) {
+    event.preventDefault()
+    vaultPanelMode.value = null
+  } else if (groupDialog.value) {
     event.preventDefault()
     groupDialog.value = null
   } else if (sidebarOpen.value) {
@@ -399,11 +727,11 @@ async function deleteGroup(group: NoteGroup) {
       }
     }
     if (activeNote.value?.groupId === group.id) activeNote.value = { ...activeNote.value, groupId: null }
-    const refreshed = await platform.repository.loadWorkspace()
-    snapshot.value = refreshed
-    if (activeNote.value) {
+    const refreshed = await refreshWorkspace(filterKey.value === 'private')
+    if (refreshed && activeNote.value) {
       const summary = refreshed.notes.find((note) => note.id === activeNote.value?.id)
       if (summary) activeNote.value = { ...activeNote.value, ...summary, content: activeNote.value.content }
+      else clearActiveNote()
     }
   })
 }
@@ -423,40 +751,63 @@ function formatDate(value: string) {
 
 onMounted(async () => {
   window.addEventListener('insp:back', navigateBack)
+  window.addEventListener('online', handleOnline)
+  document.addEventListener('visibilitychange', refreshRemoteWhenVisible)
+  remoteRefreshTimer = setInterval(refreshRemoteWhenVisible, 30_000)
+  vault.setSyncHooks(beforeSyncApply, afterSyncApply)
+  try {
+    await vault.initialize()
+    vault.hidePrivate()
+  } catch (error) {
+    vaultInitError.value = errorText(error)
+  }
   try {
     closeGuardUnlisten = await registerCloseGuard(flushBeforeClose, reportError)
   } catch (error) {
     reportError(error)
   }
-  try {
-    snapshot.value = await platform.repository.loadWorkspace()
-    const first = [...snapshot.value.notes].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
-    if (first) resetDraftState(await platform.repository.getNote(first.id))
-  } catch (error) {
-    reportError(error)
-  } finally {
-    isLoading.value = false
+  if (workspaceAvailable.value) {
+    try {
+      await loadInitialWorkspace()
+    } catch (error) {
+      reportError(error)
+    }
   }
+  isLoading.value = false
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('insp:back', navigateBack)
+  window.removeEventListener('online', handleOnline)
+  document.removeEventListener('visibilitychange', refreshRemoteWhenVisible)
+  if (remoteRefreshTimer) clearInterval(remoteRefreshTimer)
+  vault.setSyncHooks(async () => {}, async () => {})
   if (saveTimer !== undefined) clearTimeout(saveTimer)
   closeGuardUnlisten?.()
 })
 </script>
 
 <template>
-  <div class="notes-app" :class="{ 'mobile-editor-open': mobilePane === 'editor', 'sidebar-open': sidebarOpen }">
+  <VaultPanel
+    v-if="!workspaceAvailable"
+    :vault="vault"
+    mode="gate"
+    :error="vaultInitError"
+    @retry="retryInitialize"
+  />
+  <div v-else class="notes-app" :class="{ 'mobile-editor-open': mobilePane === 'editor', 'sidebar-open': sidebarOpen }">
     <header class="mobile-header">
       <button class="icon-button" type="button" aria-label="打开分组导航" @click="sidebarOpen = !sidebarOpen"><Menu :size="21" /></button>
       <strong>{{ currentFilterName }}</strong>
-      <span>拾页</span>
+      <div class="mobile-security-actions">
+        <button class="vault-mobile-button" type="button" aria-label="同步设置" title="同步设置" :disabled="isTransitioning || isLoading" @click="openSyncSettings"><Settings2 :size="19" /></button>
+        <button class="vault-mobile-button" type="button" aria-label="锁定空间" title="锁定空间" :disabled="isTransitioning || isLoading || vault.state.syncing" @click="lockWorkspace"><LockKeyhole :size="19" /></button>
+      </div>
     </header>
     <button v-if="sidebarOpen" class="sidebar-scrim" type="button" aria-label="关闭分组导航" @click="sidebarOpen = false"></button>
     <aside class="sidebar" aria-label="笔记导航">
       <div class="brand-lockup">
-        <div class="brand-mark"><BookOpenText :size="21" :stroke-width="1.9" /></div>
+        <div class="brand-mark"><img :src="inspLogo" alt="" /></div>
         <div class="brand-copy"><strong>拾页</strong><span>把想法，收进一页</span></div>
       </div>
 
@@ -467,6 +818,9 @@ onBeforeUnmount(() => {
         </button>
         <button class="nav-item" :class="{ selected: filterKey === 'ungrouped' }" :disabled="isTransitioning" @click="chooseFilter('ungrouped')">
           <Archive :size="17" /><span>未分组</span><span class="nav-count">{{ ungroupedCount }}</span>
+        </button>
+        <button class="nav-item" :class="{ selected: filterKey === 'private' }" :disabled="isTransitioning" @click="openPrivateArea">
+          <Shield :size="17" /><span>隐私笔记</span><span class="nav-count"><KeyRound :size="12" /></span>
         </button>
       </nav>
 
@@ -487,10 +841,15 @@ onBeforeUnmount(() => {
         <div v-if="groups.length === 0" class="groups-empty">分组让笔记更好找</div>
       </nav>
 
+      <ThemeSelect class="sidebar-theme" />
       <div class="sidebar-bottom">
         <div class="local-status-icon"><ShieldCheck :size="16" /></div>
-        <div class="local-status-copy"><strong>本地存储</strong><span>无需账号 · 离线可用</span></div>
+        <div class="local-status-copy"><strong>本地加密</strong><span>口令保护 · 离线可用</span></div>
         <span class="local-dot" aria-label="本地工作区"></span>
+        <div class="vault-sidebar-actions">
+          <button class="vault-sidebar-action" type="button" aria-label="同步设置" title="同步设置" :disabled="isTransitioning" @click="openSyncSettings"><Settings2 :size="16" /></button>
+          <button class="vault-sidebar-action" type="button" aria-label="锁定空间" title="锁定空间" :disabled="isTransitioning || isLoading || vault.state.syncing" @click="lockWorkspace"><LockKeyhole :size="16" /></button>
+        </div>
       </div>
     </aside>
 
@@ -565,6 +924,23 @@ onBeforeUnmount(() => {
         <div class="document-heading">
           <div class="document-kicker"><span class="document-kind-dot"></span>{{ activeNote.kind === 'mindmap' ? '思维导图' : '随手记' }} <span class="kicker-separator">·</span> {{ formatDate(activeNote.updatedAt) }}</div>
           <input class="document-title" :value="activeNote.title" placeholder="未命名笔记" aria-label="笔记标题" :disabled="isTransitioning" @input="updateTitle" />
+          <div class="note-policy-controls">
+            <label class="note-policy-control">
+              <span>隐私</span>
+              <select :value="activeNote.privacy" data-policy="privacy" :disabled="isTransitioning" aria-label="笔记隐私设置" @change="changePrivacy">
+                <option value="normal">普通笔记</option>
+                <option value="private">隐私笔记</option>
+              </select>
+            </label>
+            <label class="note-policy-control">
+              <span>同步</span>
+              <select :value="activeNote.syncPolicy" data-policy="sync" :disabled="isTransitioning" aria-label="笔记同步设置" @change="changeSyncPolicy">
+                <option value="localOnly">仅本机</option>
+                <option value="sync">同步此笔记</option>
+              </select>
+            </label>
+          </div>
+          <p v-if="activeNote.privacy === 'private' && activeNote.syncPolicy === 'sync'" class="private-sync-note">此隐私笔记已明确启用同步。</p>
         </div>
 
         <RichTextEditor
@@ -605,9 +981,18 @@ onBeforeUnmount(() => {
         <h2>给想法，留一页空白。</h2>
         <p>写下此刻想到的事。你的笔记会自动保存在这台设备上。</p>
         <button class="welcome-create-button" type="button" :disabled="isTransitioning" @click="createNote('richtext')"><FilePlus2 :size="17" />创建第一篇笔记</button>
-        <div class="welcome-local"><ShieldCheck :size="15" />本地存储 · 无需账号</div>
+        <div class="welcome-local"><ShieldCheck :size="15" />本地加密 · 口令保护</div>
       </div>
     </main>
+
+    <VaultPanel
+      v-if="vaultPanelMode"
+      :vault="vault"
+      :mode="vaultPanelMode"
+      @close="vaultPanelMode = null"
+      @revealed="enterPrivateArea"
+      @sync="syncWorkspace"
+    />
 
     <div v-if="groupDialog" class="modal-backdrop" @click.self="groupDialog = null">
       <form class="group-dialog" role="dialog" aria-modal="true" :aria-labelledby="'group-dialog-title'" @submit.prevent="saveGroupDialog">

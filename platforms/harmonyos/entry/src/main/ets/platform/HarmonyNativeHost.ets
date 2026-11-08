@@ -1,5 +1,6 @@
 import { webview } from '@kit.ArkWeb';
-import { NotesRepository, NoteKind, NoteWrite } from '../data/NotesRepository';
+import { http } from '@kit.NetworkKit';
+import { NotesRepository, NoteKind, NoteWrite, VaultCommitInput } from '../data/NotesRepository';
 
 interface BridgeRequest {
   id: string;
@@ -34,6 +35,26 @@ interface ImportImageArgs {
   bytes: number[];
 }
 
+interface VaultCommitArgs {
+  input: VaultCommitInput;
+}
+
+interface SyncHttpArgs {
+  url: string;
+  method: string;
+  token: string;
+  body?: string;
+}
+
+interface SyncHttpRequest {
+  input: SyncHttpArgs;
+}
+
+interface SyncHttpResponse {
+  status: number;
+  body: string;
+}
+
 export interface BridgeResponse {
   id: string;
   result?: string;
@@ -43,10 +64,17 @@ export interface BridgeResponse {
 export class HarmonyNativeHost {
   private readonly repository: NotesRepository;
   private readonly controller: webview.WebviewController;
+  private vaultQueue: Promise<void> = Promise.resolve();
 
   constructor(repository: NotesRepository, controller: webview.WebviewController) {
     this.repository = repository;
     this.controller = controller;
+  }
+
+  private enqueueVault<T>(action: () => Promise<T>): Promise<T> {
+    const operation = this.vaultQueue.then(() => action());
+    this.vaultQueue = operation.then((): void => {}, (_error: Error): void => {});
+    return operation;
   }
 
   postMessage(requestJson: string): void {
@@ -101,10 +129,130 @@ export class HarmonyNativeHost {
       case 'resolve_image':
         result = await this.repository.resolveImage((request.args as IdArgs).id);
         break;
+      case 'vault_header':
+        result = await this.enqueueVault(() => this.repository.vaultHeader());
+        break;
+      case 'vault_list':
+        result = await this.enqueueVault(() => this.repository.vaultList());
+        break;
+      case 'vault_get':
+        result = await this.enqueueVault(() => this.repository.vaultGet((request.args as IdArgs).id));
+        break;
+      case 'vault_commit':
+        await this.enqueueVault(() => this.repository.vaultCommit((request.args as VaultCommitArgs).input));
+        break;
+      case 'vault_legacy_export':
+        result = await this.enqueueVault(() => this.repository.vaultLegacyExport());
+        break;
+      case 'sync_http':
+        result = await this.syncHttp((request.args as SyncHttpRequest).input);
+        break;
       default:
         throw new Error('不支持的本地操作：' + request.command);
     }
     return JSON.stringify(result);
+  }
+
+  private async syncHttp(input: SyncHttpArgs): Promise<SyncHttpResponse> {
+    if (/[\u0000-\u0020\u007f]/.test(input.url)) {
+      throw new Error('同步地址不能包含空白字符或控制字符。');
+    }
+    const urlMatch = /^(https?):\/\/([^/?#]+)(?:[/?#]|$)/i.exec(input.url);
+    if (urlMatch === null) {
+      throw new Error('同步地址必须使用 HTTPS，或使用受限的局域网 HTTP 地址。');
+    }
+    const protocol = urlMatch[1].toLowerCase() + ':';
+    const authority = urlMatch[2];
+    if (authority.includes('@')) {
+      throw new Error('同步地址不能在 URL 中包含凭据。');
+    }
+    const authorityMatch = /^(?:\[([0-9a-f:.]+)\]|([^:]+))(?::([0-9]+))?$/i.exec(authority);
+    if (authorityMatch === null) {
+      throw new Error('同步地址格式无效。');
+    }
+    if (authorityMatch[3] !== undefined) {
+      const port = Number(authorityMatch[3]);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        throw new Error('同步地址端口无效。');
+      }
+    }
+    let hostname: string;
+    if (authorityMatch[1] !== undefined) {
+      hostname = authorityMatch[1];
+    } else {
+      hostname = authorityMatch[2];
+    }
+    if (protocol === 'http:' && !this.isLocalHttpHost(hostname)) {
+      throw new Error('明文 HTTP 仅允许 localhost 或局域网地址。');
+    }
+
+    const method = input.method.toUpperCase();
+    const supportedMethods: string[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'];
+    if (!supportedMethods.includes(method)) {
+      throw new Error('不支持的同步 HTTP 方法。');
+    }
+
+    const request = http.createHttp();
+    const options: http.HttpRequestOptions = {
+      method: method as http.RequestMethod,
+      header: {
+        'Authorization': 'Bearer ' + input.token,
+        'Content-Type': 'application/json'
+      },
+      expectDataType: http.HttpDataType.STRING,
+      connectTimeout: 30000,
+      readTimeout: 60000,
+      usingCache: false,
+      maxRedirects: 0,
+      maxLimit: 100 * 1024 * 1024,
+      remoteValidation: 'system'
+    };
+    if (input.body !== undefined) {
+      options.body = input.body;
+    }
+    try {
+      const response = await request.request(input.url, options);
+      return {
+        status: response.responseCode,
+        body: response.result as string
+      };
+    } finally {
+      request.destroy();
+    }
+  }
+
+  private isLocalHttpHost(hostname: string): boolean {
+    let host = hostname.toLowerCase();
+    if (host.startsWith('[') && host.endsWith(']')) {
+      host = host.slice(1, host.length - 1);
+    }
+    if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) {
+      return true;
+    }
+    if (host === '::1' || /^(fc|fd)[0-9a-f]{2}:/i.test(host) || /^fe[89ab][0-9a-f]:/i.test(host)) {
+      return true;
+    }
+
+    const octets = host.split('.');
+    if (octets.length !== 4) {
+      return false;
+    }
+    const address: number[] = [];
+    for (const octet of octets) {
+      if (!/^[0-9]{1,3}$/.test(octet)) {
+        return false;
+      }
+      const value = Number(octet);
+      if (!Number.isInteger(value) || value < 0 || value > 255) {
+        return false;
+      }
+      address.push(value);
+    }
+    return address[0] === 10 ||
+      address[0] === 127 ||
+      (address[0] === 169 && address[1] === 254) ||
+      (address[0] === 172 && address[1] >= 16 && address[1] <= 31) ||
+      (address[0] === 192 && address[1] === 168);
   }
 
   private respond(response: BridgeResponse): void {

@@ -1,0 +1,25 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: insp-sync-server:local
+    restart: unless-stopped
+    environment:
+      INSP_LISTEN: 0.0.0.0:8787
+      INSP_DATA_DIR: /data
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - insp-sync-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  insp-sync-data:
+    name: insp-sync-data

@@ -1,7 +1,10 @@
 mod models;
 mod storage;
 
-use models::{Attachment, Note, NoteGroup, NoteWrite, WorkspaceSnapshot};
+use models::{
+    Attachment, LegacyExport, Note, NoteGroup, NoteWrite, SyncHttpInput, SyncHttpResponse,
+    VaultCommitInput, VaultRecord, WorkspaceSnapshot,
+};
 use std::sync::Arc;
 use storage::Storage;
 use tauri::{Manager, State};
@@ -103,6 +106,62 @@ async fn resolve_image(storage: State<'_, Arc<Storage>>, id: String) -> Result<S
     storage_task(storage, move |db| db.resolve_image(&id)).await
 }
 
+#[tauri::command]
+async fn vault_header(storage: State<'_, Arc<Storage>>) -> Result<Option<String>, String> {
+    storage_task(storage, Storage::vault_header).await
+}
+
+#[tauri::command]
+async fn vault_list(storage: State<'_, Arc<Storage>>) -> Result<Vec<VaultRecord>, String> {
+    storage_task(storage, Storage::vault_list).await
+}
+
+#[tauri::command]
+async fn vault_get(storage: State<'_, Arc<Storage>>, id: String) -> Result<Option<String>, String> {
+    storage_task(storage, move |db| db.vault_get(&id)).await
+}
+
+#[tauri::command]
+async fn vault_commit(
+    storage: State<'_, Arc<Storage>>,
+    input: VaultCommitInput,
+) -> Result<(), String> {
+    storage_task(storage, move |db| db.vault_commit(input)).await
+}
+
+#[tauri::command]
+async fn vault_legacy_export(storage: State<'_, Arc<Storage>>) -> Result<LegacyExport, String> {
+    storage_task(storage, Storage::vault_legacy_export).await
+}
+
+#[tauri::command]
+async fn sync_http(input: SyncHttpInput) -> Result<SyncHttpResponse, String> {
+    let method = reqwest::Method::from_bytes(input.method.as_bytes())
+        .map_err(|_| "不支持的 HTTP 方法。".to_string())?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| "无法创建同步 HTTP 客户端。".to_string())?;
+    let mut request = client
+        .request(method, input.url)
+        .bearer_auth(input.token)
+        .header(reqwest::header::CONTENT_TYPE, "application/json");
+    if let Some(body) = input.body {
+        request = request.body(body);
+    }
+    let response = request
+        .send()
+        .await
+        .map_err(|_| "同步 HTTP 请求失败。".to_string())?;
+    let status = response.status().as_u16();
+    let body = response
+        .text()
+        .await
+        .map_err(|_| "无法读取同步 HTTP 响应。".to_string())?;
+    Ok(SyncHttpResponse { status, body })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -129,6 +188,12 @@ pub fn run() {
             import_image,
             import_image_bytes,
             resolve_image,
+            vault_header,
+            vault_list,
+            vault_get,
+            vault_commit,
+            vault_legacy_export,
+            sync_http,
         ])
         .run(tauri::generate_context!())
         .expect("无法启动拾页");

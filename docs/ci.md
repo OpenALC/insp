@@ -1,12 +1,13 @@
 # CI 与构建产物
 
-`Build` 工作流在推送 main、提交 PR 或手动运行时启动三个独立任务：
+`Build` 工作流在推送 main、提交 PR 或手动运行时启动四个独立任务：
 
 | 任务 | 检查 | 产物 |
 | --- | --- | --- |
-| Shared frontend | 锁定依赖安装、Vue/TypeScript 检查、Vite 生产构建 | Web 资源 |
-| Windows executable | Rust 格式检查、Tauri 发布构建 | Windows x64 EXE |
+| Shared frontend | 锁定依赖安装、加密和同步策略测试、Vue/TypeScript 检查、Vite 生产构建 | Web 资源 |
+| Windows executable | Rust 格式及迁移测试、Tauri 发布构建 | Windows x64 EXE |
 | Android emulator APK | Android SDK/NDK、Rust Android 目标、Gradle/Tauri 构建 | x86_64 调试 APK |
+| Linux encrypted sync server | Rust 格式、HTTP 协议测试、Linux 发布构建、Docker 镜像构建 | Linux x64 同步服务 |
 
 工作流只授予仓库读取权限，不依赖发布签名密钥。Android 调试包用于模拟器开发，正式发行需另设签名。
 

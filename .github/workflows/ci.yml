@@ -25,6 +25,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm test
       - run: npm run build
       - uses: actions/upload-artifact@v7.0.2
         with:
@@ -46,11 +47,34 @@ jobs:
       - run: npm ci
       - run: cargo fmt --check
         working-directory: src-tauri
+      - run: cargo test --locked
+        working-directory: src-tauri
       - run: npm run tauri -- build --no-bundle
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: insp-windows-x64
           path: src-tauri/target/release/insp-notes.exe
+          if-no-files-found: error
+
+  sync-server:
+    name: Linux encrypted sync server
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: rustup update stable --no-self-update
+      - run: cargo fmt --check
+        working-directory: server
+      - run: cargo test --locked
+        working-directory: server
+      - run: cargo build --release --locked
+        working-directory: server
+      - name: Build Linux deployment image
+        run: docker build --tag insp-sync:ci server
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: insp-sync-linux-x64
+          path: server/target/release/insp-sync-server
           if-no-files-found: error
 
   android:
