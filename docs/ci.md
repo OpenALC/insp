@@ -16,6 +16,8 @@
 
 本机开发环境需在 runner 的 PATH 中提供 `ohpm`、`hvigorw`，并设置 `DEVECO_SDK_HOME`。runner 工作目录与日常开发目录分开，构建输出只上传 HAP，不上传设备数据或签名材料。
 
+鸿蒙任务使用 runner 临时目录内的独立 npm 缓存，不上传本机共用 npm 缓存。
+
 模拟器功能验证在开发过程中直接运行应用完成，不把临时探针或验证脚本加入项目。
 
 查看记录：<https://github.com/OpenALC/insp/actions>。
