@@ -13,23 +13,18 @@
 
 ## 构建
 
-需要 Node.js/npm、HarmonyOS SDK API 26、ohpm 和 Hvigor。先在仓库根目录构建网页并复制资源，再打包 HAP：
+需要 Node.js/npm、HarmonyOS SDK API 26、ohpm 和 Hvigor。将 DevEco 命令行工具加入 `PATH`，并设置 `DEVECO_SDK_HOME`。先在仓库根目录构建网页并复制资源，再打包 HAP：
 
 ```powershell
 npm ci
 npm run harmony:prepare
 Push-Location platforms/harmonyos
-hvigorw assembleHap --mode module -p product=default -p module=entry
+ohpm install --all
+hvigorw --mode module -p product=default -p module=entry@default -p buildMode=debug assembleHap --no-daemon
 Pop-Location
 ```
 
 `harmony:prepare` 会运行共享前端的类型检查和 Vite 构建，并覆盖生成目录 `entry/src/main/resources/rawfile/web`。请勿手工编辑该目录。
-
-在 DevEco 命令行工具不在 `PATH` 时，可直接调用本机 Hvigor：
-
-```powershell
-& 'D:\ide\Huawei\DevEco Studio\tools\hvigor\bin\hvigorw.bat' assembleHap --mode module -p product=default -p module=entry
-```
 
 生成包：`entry/build/default/outputs/default/entry-default-unsigned.hap`。本地 HarmonyOS CI 可执行同一组 `harmony:prepare` 与 Hvigor 命令；Windows runner 需预装 API 26 SDK、ohpm、Hvigor 和 Node.js。
 
@@ -46,4 +41,17 @@ hdc -t <emulator-target> shell aa start -a EntryAbility -b com.openalc.inspnotes
 
 ## 当前构建状态
 
-2026-11-08：已用 API 26 SDK 完成 ArkTS 编译与 unsigned HAP 打包。模拟器安装和运行需在 DevEco 模拟器在线后完成；本目录没有提交签名材料。
+2026-11-08：API 26 原生编译及 GitHub Actions HAP 构建通过。在本地 HarmonyOS 7 / API 26 平板模拟器安装 CI unsigned HAP 并完成以下实际界面操作：
+
+- 创建分组、编辑富文本，将普通笔记与导图归入同一分组。
+- 编辑根节点与子节点，切换列表和思维树，确认文字及层级保留。
+- 通过系统图库选择器插入 PNG，确认正文显示图片。
+- 进入后台、强停并重新启动后，分组、富文本、图片和导图节点均恢复；系统返回键可从编辑返回，再等待保存后退出。
+
+空白模拟器可先将仓库现有 PNG 图标导入媒体库，再打开图片选择器：
+
+```powershell
+hdc -t <emulator-target> file send <absolute-path-to-image.png> /mnt/data/100/media_fuse/Photo/insp-image.png
+```
+
+该媒体库路径适用于 API 21+，参见 [华为媒体库调试文档](https://developer.huawei.com/consumer/en/doc/harmonyos-guides/mediatool/)。本目录没有提交签名材料或设备数据。
