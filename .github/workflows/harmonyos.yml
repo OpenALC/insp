@@ -18,7 +18,7 @@ jobs:
           node-version: 24
       - run: npm ci
         env:
-          npm_config_cache: ${{ runner.temp }}/insp-npm-cache
+          npm_config_cache: ${{ runner.tool_cache }}/insp-npm-cache
       - run: npm run harmony:prepare
       - name: Build native HAP
         shell: pwsh

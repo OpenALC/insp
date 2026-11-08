@@ -34,4 +34,4 @@ On 2026-11-08, the API 36 x86_64 emulator ran the CI APK containing the mobile B
 
 A mind map with three levels and multiline node text retained identical document JSON, node IDs and text when switching between list and tree views. After Home, force-stop and relaunch, the group, note body, image attachment and mind map all recovered from local storage. The group dialog Back behavior was also checked with the keyboard shown and dismissed.
 
-The Gradle Wrapper allows 60 seconds for distribution downloads; CI previously hit its default 10-second network timeout before Gradle could compile the project.
+The Gradle Wrapper uses the official `downloads.gradle.org` distribution endpoint and allows 60 seconds for downloads. CI previously hit the default 10-second timeout and HTTP 504 responses from `services.gradle.org` before Gradle could compile the project.
