@@ -297,7 +297,7 @@ export class NotesRepository {
       this.store.commit();
     } catch (error) {
       this.store.rollBack();
-      throw error;
+      throw error as Error;
     }
   }
 
