@@ -30,8 +30,12 @@ async fn get_note(storage: State<'_, Arc<Storage>>, id: String) -> Result<Note, 
 async fn create_note(
     storage: State<'_, Arc<Storage>>,
     group_id: Option<String>,
+    kind: Option<String>,
 ) -> Result<Note, String> {
-    storage_task(storage, move |db| db.create_note(group_id)).await
+    storage_task(storage, move |db| {
+        db.create_note(group_id, kind.as_deref().unwrap_or("richtext"))
+    })
+    .await
 }
 
 #[tauri::command]

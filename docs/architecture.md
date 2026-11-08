@@ -8,7 +8,9 @@
 
 本地 `revision` 每次保存递增，与未来的 `server_revision` 分离。当前不产生网络请求，也不写入待上传队列。后续启用同步时，只有 `syncPolicy=sync` 的记录才进入队列；提交笔记和对应加密 outbox 记录必须在同一事务中完成。
 
-分组类型预留 `parentId`，首版 UI 只创建平级分组。普通笔记正文使用 Tiptap JSON；`kind=mindmap` 只保留类型标识，树模型和编辑器尚未实现。未知文档格式未来应通过显式迁移升级，不能直接覆盖。
+分组类型预留 `parentId`，首版 UI 只创建平级分组。普通笔记正文使用 Tiptap JSON；`kind=mindmap` 保存 `{ type: 'mindmap', root: { id, text, children } }`。列表与思维树直接操作同一份树，不进行 Markdown/HTML 转换，切换视图不触发正文保存，不重新分配节点 ID。节点的顺序、层级、空文本与多行文本都在树中保存；折叠、缩放和视图选择属于本机展示状态。
+
+新增导图沿用 notes 表现有 kind/content/schema_version、分组外键、版本号和删除标记，不需要改写已有普通笔记或升级数据库表。导图与普通笔记使用相同的保存队列、事务和本地生命周期。界面根据文档类型按需加载对应编辑器。
 
 ## 附件
 

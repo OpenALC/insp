@@ -1,0 +1,68 @@
+.mobile-header, .mobile-back, .sidebar-scrim { display: none; }
+.create-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.create-map-button { color: #365f4e; background: #e8eee4; box-shadow: none; }
+.create-map-button:hover { color: #fffaf2; }
+.list-pane-header > div:first-child { min-width: 0; }
+.list-pane-header h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 760px) {
+  html, body, #app { min-width: 0; min-height: 0; }
+  .notes-app { display: flex; height: 100dvh; flex-direction: column; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+  .mobile-header { display: flex; min-height: 54px; flex: 0 0 auto; align-items: center; gap: 10px; padding: 4px 12px; border-bottom: 1px solid var(--line); background: var(--paper); }
+  .mobile-header strong { flex: 1; overflow: hidden; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-header > span { color: var(--muted); font-size: 13px; }
+  .mobile-header .icon-button, .mobile-back { width: 42px; height: 42px; }
+  .sidebar { position: fixed; z-index: 40; inset: 0 auto 0 0; width: 280px; align-items: stretch; padding: calc(24px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); transform: translateX(-100%); transition: transform .18s ease; }
+  .sidebar-open .sidebar { transform: translateX(0); }
+  .sidebar-scrim { position: fixed; z-index: 39; inset: 0; display: block; width: 100%; height: 100%; border: 0; background: #102a2299; }
+  .sidebar .brand-lockup { justify-content: flex-start; padding: 0 8px 30px; }
+  .sidebar .brand-copy, .sidebar .local-status-copy { display: flex; }
+  .sidebar > .sidebar-section-label, .sidebar .sidebar-group-heading .sidebar-section-label, .sidebar .nav-item span:nth-child(2), .sidebar .nav-item .nav-count, .sidebar .group-name, .sidebar .group-select .nav-count, .sidebar .groups-empty, .sidebar .local-dot { display: block; }
+  .sidebar .primary-nav, .sidebar .group-nav { align-items: stretch; }
+  .sidebar .nav-item, .sidebar .group-select { width: 100%; min-height: 46px; justify-content: flex-start; gap: 11px; padding: 10px 12px; font-size: 15px; }
+  .sidebar .nav-count { font-size: 12px; }
+  .sidebar .sidebar-group-heading { justify-content: space-between; margin: 24px 4px 8px 12px; }
+  .sidebar .sidebar-add { width: 42px; height: 42px; }
+  .sidebar .group-row { justify-content: flex-start; }
+  .sidebar .group-actions { display: flex; opacity: 1; }
+  .sidebar .group-action { width: 32px; height: 36px; }
+  .sidebar .group-select { padding-right: 75px; }
+  .sidebar .group-select .nav-count { display: none; }
+  .sidebar .sidebar-bottom { justify-content: flex-start; gap: 9px; padding: 15px 8px 2px; }
+  .note-list-pane { min-height: 0; flex: 1; padding: 20px 16px 10px; border: 0; }
+  .note-list-pane .eyebrow { font-size: 10px; }
+  .list-pane-header h1 { max-width: 150px; font-size: 23px; }
+  .create-note-button { min-height: 42px; padding: 0 12px; font-size: 13px; }
+  .search-box { height: 44px; margin-top: 18px; }
+  .search-box input { font-size: 15px; }
+  .list-meta { font-size: 12px; }
+  .note-card { min-height: 100px; padding: 15px 12px; }
+  .note-card-topline strong { font-size: 15px; }
+  .note-card-topline time { font-size: 11px; }
+  .note-preview { font-size: 13px; }
+  .note-group-tag { font-size: 11px; }
+  .note-card-icon { width: 34px; height: 34px; }
+  .editor-pane { display: none; min-height: 0; flex: 1; padding: 0 16px; }
+  .mobile-editor-open .note-list-pane, .mobile-editor-open .mobile-header { display: none; }
+  .mobile-editor-open .editor-pane { display: flex; }
+  .mobile-back { display: grid; margin-left: -9px; }
+  .editor-topbar { min-height: 56px; gap: 6px; }
+  .breadcrumb { flex: 1; font-size: 12px; }
+  .breadcrumb > span:first-child, .breadcrumb > svg:first-of-type, .breadcrumb-current { display: none; }
+  .group-picker-label { display: none; }
+  .group-picker { max-width: 115px; height: 36px; font-size: 13px; }
+  .delete-note-button { width: 36px; height: 36px; }
+  .document-heading { padding: 20px 0 16px; }
+  .document-kicker { font-size: 11px; }
+  .document-title { font-size: 27px; }
+  .format-toolbar { min-height: 48px; gap: 5px; }
+  .tool-button { width: 38px; height: 40px; }
+  .rich-editor-content { padding-top: 16px; font-size: 16px; line-height: 1.85; }
+  .editor-footer { min-height: 40px; font-size: 11px; }
+  .footer-note > span:last-child, .footer-note .footer-divider { display: none; }
+  .group-dialog { padding: 24px; }
+  .group-name-input { height: 46px; font-size: 16px; }
+  .dialog-actions button { height: 42px; font-size: 14px; }
+  .error-banner { font-size: 12px; }
+  .welcome-empty { padding: 18px; }
+}

@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { JSONContent } from '@tiptap/core'
-import type { Note, NoteGroup, NoteSummary, NoteWrite, WorkspaceSnapshot } from './domain/models'
+import type { Note, NoteContent, NoteGroup, NoteKind, NoteSummary, NoteWrite, WorkspaceSnapshot } from './domain/models'
+import { mindMapText, type MindMapDocument } from './domain/mindmap'
 import { platform, registerCloseGuard } from './platform'
-import RichTextEditor from './components/RichTextEditor.vue'
+const RichTextEditor = defineAsyncComponent(() => import('./components/RichTextEditor.vue'))
+const MindMapEditor = defineAsyncComponent(() => import('./components/MindMapEditor.vue'))
 import {
   Archive,
+  ArrowLeft,
   BookOpenText,
   Check,
   ChevronRight,
@@ -16,16 +19,18 @@ import {
   Folder,
   FolderPlus,
   Inbox,
+  Menu,
   Pencil,
   Search,
   ShieldCheck,
   Trash2,
+  Workflow,
   X,
 } from 'lucide-vue-next'
 
 type SaveState = 'saved' | 'unsaved' | 'saving' | 'error'
 type GroupDialog = { mode: 'create' } | { mode: 'rename'; groupId: string }
-type RichTextEditorHandle = InstanceType<typeof RichTextEditor>
+type RichTextEditorHandle = { awaitPendingImports(): Promise<void> }
 
 const snapshot = ref<WorkspaceSnapshot | null>(null)
 const activeNote = ref<Note | null>(null)
@@ -41,6 +46,8 @@ const saveState = ref<SaveState>('saved')
 const actionError = ref('')
 const showError = ref(true)
 const draftPlainText = ref('')
+const mobilePane = ref<'list' | 'editor'>('list')
+const sidebarOpen = ref(false)
 let draftVersion = 0
 let persistedVersion = 0
 let queuedVersion = 0
@@ -114,7 +121,7 @@ function captureWrite(note: Note): NoteWrite {
     id: note.id,
     title: note.title,
     groupId: note.groupId,
-    content: JSON.parse(JSON.stringify(note.content)) as JSONContent,
+    content: JSON.parse(JSON.stringify(note.content)) as NoteContent,
     plainText: draftPlainText.value,
   }
 }
@@ -180,7 +187,7 @@ function markDraftChanged() {
     saveTimer = undefined
     const current = activeNote.value
     if (current) void enqueueSave(captureWrite(current), draftVersion).catch(() => undefined)
-  }, 450)
+  }, platform.capabilities.platform === 'windows' ? 450 : 150)
 }
 
 async function flushSaves() {
@@ -253,7 +260,7 @@ async function flushBeforeClose() {
 
 function resetDraftState(note: Note) {
   activeNote.value = note
-  draftPlainText.value = documentText(note.content)
+  draftPlainText.value = note.kind === 'mindmap' ? mindMapText(note.content as MindMapDocument) : documentText(note.content as JSONContent)
   draftVersion = 0
   persistedVersion = 0
   queuedVersion = 0
@@ -263,19 +270,24 @@ function resetDraftState(note: Note) {
 }
 
 async function openNote(noteId: string) {
-  if (activeNote.value?.id === noteId) return
+  if (activeNote.value?.id === noteId) {
+    mobilePane.value = 'editor'
+    return
+  }
   await runTransition(async () => {
     const note = await platform.repository.getNote(noteId)
     resetDraftState(note)
+    mobilePane.value = 'editor'
   })
 }
 
-async function createNote() {
+async function createNote(kind: NoteKind = 'richtext') {
   await runTransition(async () => {
     const groupId = filterKey.value.startsWith('group:') ? filterKey.value.slice(6) : null
-    const note = await platform.repository.createNote(groupId)
+    const note = await platform.repository.createNote(groupId, kind)
     if (snapshot.value) snapshot.value = { ...snapshot.value, notes: [summaryFromNote(note), ...snapshot.value.notes] }
     resetDraftState(note)
+    mobilePane.value = 'editor'
   })
 }
 
@@ -286,6 +298,7 @@ async function deleteActiveNote() {
     await platform.repository.deleteNote(note.id)
     if (snapshot.value) snapshot.value = { ...snapshot.value, notes: snapshot.value.notes.filter((item) => item.id !== note.id) }
     activeNote.value = null
+    mobilePane.value = 'list'
     draftPlainText.value = ''
     draftVersion = 0
     persistedVersion = 0
@@ -295,7 +308,7 @@ async function deleteActiveNote() {
   })
 }
 
-function updateDocument(content: JSONContent, plainText: string) {
+function updateDocument(content: NoteContent, plainText: string) {
   if (!activeNote.value) return
   activeNote.value = { ...activeNote.value, content }
   draftPlainText.value = plainText
@@ -322,6 +335,22 @@ async function changeNoteGroup(event: Event) {
 
 function chooseFilter(key: string) {
   filterKey.value = key
+  sidebarOpen.value = false
+  mobilePane.value = 'list'
+}
+
+async function showNoteList() {
+  await runTransition(async () => { mobilePane.value = 'list' })
+}
+
+function navigateBack(event: Event) {
+  if (sidebarOpen.value) {
+    event.preventDefault()
+    sidebarOpen.value = false
+  } else if (mobilePane.value === 'editor') {
+    event.preventDefault()
+    void showNoteList()
+  }
 }
 
 async function showGroupDialog(dialog: GroupDialog) {
@@ -390,6 +419,7 @@ function formatDate(value: string) {
 }
 
 onMounted(async () => {
+  window.addEventListener('insp:back', navigateBack)
   try {
     closeGuardUnlisten = await registerCloseGuard(flushBeforeClose, reportError)
   } catch (error) {
@@ -407,13 +437,20 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('insp:back', navigateBack)
   if (saveTimer !== undefined) clearTimeout(saveTimer)
   closeGuardUnlisten?.()
 })
 </script>
 
 <template>
-  <div class="notes-app">
+  <div class="notes-app" :class="{ 'mobile-editor-open': mobilePane === 'editor', 'sidebar-open': sidebarOpen }">
+    <header class="mobile-header">
+      <button class="icon-button" type="button" aria-label="打开分组导航" @click="sidebarOpen = !sidebarOpen"><Menu :size="21" /></button>
+      <strong>{{ currentFilterName }}</strong>
+      <span>拾页</span>
+    </header>
+    <button v-if="sidebarOpen" class="sidebar-scrim" type="button" aria-label="关闭分组导航" @click="sidebarOpen = false"></button>
     <aside class="sidebar" aria-label="笔记导航">
       <div class="brand-lockup">
         <div class="brand-mark"><BookOpenText :size="21" :stroke-width="1.9" /></div>
@@ -460,7 +497,10 @@ onBeforeUnmount(() => {
           <div class="eyebrow">拾页 / NOTES</div>
           <h1>{{ currentFilterName }}</h1>
         </div>
-        <button class="create-note-button" type="button" aria-label="新建笔记" title="新建笔记" :disabled="isLoading || isTransitioning" @click="createNote"><FilePlus2 :size="18" /><span>新建</span></button>
+        <div class="create-actions">
+          <button class="create-note-button" type="button" aria-label="新建笔记" title="新建笔记" :disabled="isLoading || isTransitioning" @click="createNote('richtext')"><FilePlus2 :size="17" /><span>笔记</span></button>
+          <button class="create-note-button create-map-button" type="button" aria-label="新建思维导图" title="新建思维导图" :disabled="isLoading || isTransitioning" @click="createNote('mindmap')"><Workflow :size="17" /><span>导图</span></button>
+        </div>
       </header>
 
       <label class="search-box">
@@ -473,7 +513,7 @@ onBeforeUnmount(() => {
       <div v-if="isLoading" class="list-loading" role="status"><span class="loading-orbit"></span><span>正在打开本地笔记…</span></div>
       <div v-else-if="filteredNotes.length" class="note-list">
         <button v-for="note in filteredNotes" :key="note.id" class="note-card" :class="{ selected: activeNote?.id === note.id }" :disabled="isTransitioning" @click="openNote(note.id)">
-          <span class="note-card-icon"><FileText :size="17" /></span>
+          <span class="note-card-icon"><Workflow v-if="note.kind === 'mindmap'" :size="17" /><FileText v-else :size="17" /></span>
           <span class="note-card-content">
             <span class="note-card-topline"><strong>{{ note.title || '未命名笔记' }}</strong><time>{{ formatDate(note.updatedAt) }}</time></span>
             <span class="note-preview">{{ note.preview || '还没有正文，点开继续记录。' }}</span>
@@ -492,7 +532,7 @@ onBeforeUnmount(() => {
         <template v-else>
           <strong>{{ filterKey === 'all' ? '这里还空着' : `「${currentFilterName}」还没有笔记` }}</strong>
           <span>先记下一个想法，之后再慢慢整理。</span>
-          <button class="empty-create-button" type="button" :disabled="isTransitioning" @click="createNote"><FilePlus2 :size="16" />新建笔记</button>
+          <button class="empty-create-button" type="button" :disabled="isTransitioning" @click="createNote('richtext')"><FilePlus2 :size="16" />新建笔记</button>
         </template>
       </div>
 
@@ -507,6 +547,7 @@ onBeforeUnmount(() => {
       </div>
       <template v-if="activeNote">
         <header class="editor-topbar">
+          <button class="icon-button mobile-back" type="button" aria-label="返回笔记列表" :disabled="isTransitioning" @click="showNoteList"><ArrowLeft :size="20" /></button>
           <div class="breadcrumb"><span>拾页</span><ChevronRight :size="14" /><span>{{ activeGroupName }}</span><ChevronRight :size="14" /><span class="breadcrumb-current">笔记</span></div>
           <div class="editor-top-actions">
             <label class="group-picker-label" for="note-group-picker">移动到</label>
@@ -519,17 +560,25 @@ onBeforeUnmount(() => {
         </header>
 
         <div class="document-heading">
-          <div class="document-kicker"><span class="document-kind-dot"></span>随手记 <span class="kicker-separator">·</span> {{ formatDate(activeNote.updatedAt) }}</div>
+          <div class="document-kicker"><span class="document-kind-dot"></span>{{ activeNote.kind === 'mindmap' ? '思维导图' : '随手记' }} <span class="kicker-separator">·</span> {{ formatDate(activeNote.updatedAt) }}</div>
           <input class="document-title" :value="activeNote.title" placeholder="未命名笔记" aria-label="笔记标题" :disabled="isTransitioning" @input="updateTitle" />
         </div>
 
         <RichTextEditor
+          v-if="activeNote.kind === 'richtext'"
           :key="activeNote.id"
           ref="richEditor"
-          :content="activeNote.content"
+          :content="activeNote.content as JSONContent"
           :editable="!isTransitioning"
           @update:document="updateDocument"
           @io-error="reportError"
+        />
+        <MindMapEditor
+          v-else
+          :key="activeNote.id"
+          :content="activeNote.content as MindMapDocument"
+          :editable="!isTransitioning"
+          @update:document="updateDocument"
         />
 
         <footer class="editor-footer">
@@ -552,7 +601,7 @@ onBeforeUnmount(() => {
         <div class="welcome-eyebrow">A LITTLE SPACE FOR YOUR THOUGHTS</div>
         <h2>给想法，留一页空白。</h2>
         <p>写下此刻想到的事。你的笔记会自动保存在这台设备上。</p>
-        <button class="welcome-create-button" type="button" :disabled="isTransitioning" @click="createNote"><FilePlus2 :size="17" />创建第一篇笔记</button>
+        <button class="welcome-create-button" type="button" :disabled="isTransitioning" @click="createNote('richtext')"><FilePlus2 :size="17" />创建第一篇笔记</button>
         <div class="welcome-local"><ShieldCheck :size="15" />本地存储 · 无需账号</div>
       </div>
     </main>

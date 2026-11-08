@@ -13,7 +13,7 @@ export function createNativeAdapter(
     repository: {
       loadWorkspace: () => invoke<WorkspaceSnapshot>('load_workspace'),
       getNote: (id) => invoke<Note>('get_note', { id }),
-      createNote: (groupId) => invoke<Note>('create_note', { groupId }),
+      createNote: (groupId, kind = 'richtext') => invoke<Note>('create_note', { groupId, kind }),
       saveNote: (input) => invoke<Note>('save_note', { input }),
       deleteNote: (id) => invoke<void>('delete_note', { id }),
       createGroup: (name) => invoke<NoteGroup>('create_group', { name }),

@@ -1,0 +1,32 @@
+name: HarmonyOS native build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  harmonyos:
+    name: HAP with installed DevEco SDK
+    runs-on: [self-hosted, Windows, harmonyos]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run harmony:prepare
+      - name: Build native HAP
+        shell: pwsh
+        run: |
+          ohpm install --all
+          hvigorw --mode module -p product=default -p module=entry@default -p buildMode=debug assembleHap --no-daemon
+        working-directory: platforms/harmonyos
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: insp-harmonyos-debug
+          path: platforms/harmonyos/entry/build/default/outputs/default/*.hap
+          if-no-files-found: error

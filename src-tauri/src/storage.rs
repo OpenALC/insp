@@ -125,16 +125,29 @@ impl Storage {
         read_note(&self.connection.lock().unwrap(), id)
     }
 
-    pub fn create_note(&self, group_id: Option<String>) -> Result<Note, String> {
+    pub fn create_note(&self, group_id: Option<String>, kind: &str) -> Result<Note, String> {
         let mut connection = self.connection.lock().unwrap();
         let transaction = connection
             .transaction()
             .map_err(|error| error.to_string())?;
         let id = Uuid::new_v4().to_string();
         let timestamp = now();
+        let (title, content, preview) = match kind {
+            "richtext" => (
+                "未命名笔记",
+                serde_json::json!({"type":"doc","content":[{"type":"paragraph"}]}),
+                "",
+            ),
+            "mindmap" => (
+                "未命名导图",
+                serde_json::json!({"type":"mindmap","root":{"id":Uuid::new_v4().to_string(),"text":"中心主题","children":[]}}),
+                "中心主题",
+            ),
+            _ => return Err("不支持的笔记类型。".into()),
+        };
         transaction.execute(
-            "INSERT INTO notes (id, title, group_id, content, created_at, updated_at) VALUES (?1, '未命名笔记', ?2, ?3, ?4, ?4)",
-            params![id, group_id, r#"{"type":"doc","content":[{"type":"paragraph"}]}"#, timestamp],
+            "INSERT INTO notes (id, title, group_id, kind, content, preview, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
+            params![id, title, group_id, kind, content.to_string(), preview, timestamp],
         ).map_err(|error| error.to_string())?;
         let note = read_note(&transaction, &id)?;
         transaction.commit().map_err(|error| error.to_string())?;

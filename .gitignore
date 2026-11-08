@@ -4,6 +4,8 @@ src-tauri/target/
 src-tauri/gen/*
 !src-tauri/gen/android/
 src-tauri/gen/android/tauri.properties
+**/tauri.properties
+platforms/harmonyos/entry/src/main/resources/rawfile/web/
 **/build/
 **/.gradle/
 **/.hvigor/

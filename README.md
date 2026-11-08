@@ -1,6 +1,9 @@
 # 拾页 · Insp
 
-本地优先的跨端富文本笔记项目。当前实现 Windows 桌面端：Vue 3 + Tiptap + Tauri + SQLite。
+[![Build](https://github.com/OpenALC/insp/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenALC/insp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+本地优先的跨端笔记与思维导图：Vue 3 + Tiptap + Tauri + SQLite。Windows 和 Android 共享界面与 Rust 存储；HarmonyOS 通过 ArkTS / ArkWeb 宿主接入共享前端。
 
 ## 运行
 
@@ -28,6 +31,7 @@ npm run tauri -- build --no-bundle
 ## 当前功能
 
 - 新建、编辑、删除普通笔记，按最近修改时间排列，标题与摘要搜索。
+- 创建思维导图，在列表和思维树之间无损切换；支持主题编辑、增删、排序、缩进、折叠和缩放。
 - 富文本标题、粗体、斜体、删除线、链接、列表、待办、引用、代码与撤销重做。
 - 通过选择文件、粘贴或拖入本地图片插入附件。
 - 新建、重命名、删除分组，将笔记移动到分组。删除分组保留笔记并移入未分组。
@@ -38,7 +42,7 @@ npm run tauri -- build --no-bundle
 
 仓库的 `.cargo/config.toml` 让 Windows x64 MSVC 目标自动查找 Visual Studio C 编译器，避免本机全局 `CC=gcc` 导致 SQLite 链接失败；不修改系统环境变量。
 
-本版仅实现普通笔记、平级分组和本地存储。思维导图、加密私密空间、Android/HarmonyOS 安装包和联网同步尚未实现。数据库中的 `privacy`、`sync_policy` 等字段是后续数据模型预留，当前没有启用这些功能的 UI。
+普通笔记和思维导图共享分组、自动保存与本地数据库；手机采用列表 / 编辑器单页导航。加密私密空间和联网同步尚未实现，`privacy`、`sync_policy` 是后续数据模型预留。
 
 ## 数据与备份
 
@@ -65,6 +69,7 @@ attachments/         应用管理的图片副本
 src/
   App.vue                  笔记、分组和保存生命周期
   components/              富文本编辑器与图片节点
+  domain/mindmap.ts        思维树的稳定节点模型
   domain/models.ts         文档、仓库、附件与平台能力契约
   platform/native.ts       共用原生命令到业务接口的适配
   platform/tauri.ts        Windows / 后续 Android 宿主
@@ -80,3 +85,9 @@ server/                   Linux 同步服务边界说明
 ```
 
 构建检查：`npm run build`；原生编译检查：在 `src-tauri` 下执行 `cargo check`。
+
+Android 开发与构建见 [platforms/android/README.md](platforms/android/README.md)，鸿蒙见 [platforms/harmonyos/README.md](platforms/harmonyos/README.md)。CI 任务与产物见 [docs/ci.md](docs/ci.md)。
+
+## 开源协议
+
+[MIT](LICENSE) © 2026 OpenALC contributors。
