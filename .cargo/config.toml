@@ -1,0 +1,3 @@
+[env]
+# Let cc-rs discover MSVC for this target rather than inheriting a global MinGW CC.
+CC_x86_64_pc_windows_msvc = ""
