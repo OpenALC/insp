@@ -6,7 +6,9 @@ Android uses the shared Vue/Tiptap interface and the Tauri Rust repository. Note
 
 Install Android SDK platform 36, build-tools 36.0.0, NDK 27.0.12077973, JDK 21, Node.js, Rust, and the `x86_64-linux-android` Rust target. Keep SDK and JDK paths in ignored `local.properties` or the local shell environment; do not commit machine-specific paths or signing credentials.
 
-On Windows PowerShell, set `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `ANDROID_NDK_HOME`, and `JAVA_HOME` for the current build process. For the x86_64 Rust build, point the target-specific `CC_x86_64-linux-android` and `CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER` variables to the NDK's `x86_64-linux-android24-clang.cmd` wrapper. This keeps a host MinGW `CC` from compiling Android's bundled SQLite.
+On Windows PowerShell, set `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `ANDROID_NDK_HOME`, and `JAVA_HOME` for the current build process. For the x86_64 Rust build, point the target-specific `CC_x86_64-linux-android`, `CXX_x86_64-linux-android`, and `CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER` variables to the NDK's `x86_64-linux-android24-clang.cmd` and `clang++.cmd` wrappers. Keep `CC` and `CXX` host-wide values unchanged; the target-qualified variables select NDK compilers for Android-only crates while host build scripts retain their Windows toolchain.
+
+The Windows Tauri CLI build also creates a symlink for the native library under `jniLibs`. Windows Developer Mode or the symbolic-link privilege is required for that CLI step. Linux CI does not need this Windows permission.
 
 ```powershell
 npm ci

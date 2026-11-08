@@ -240,9 +240,6 @@ function handleTreeText(id: string, event: Event) {
   updateText(id, (event.target as HTMLTextAreaElement).value)
 }
 
-async function awaitPendingImports() {}
-
-defineExpose({ awaitPendingImports })
 </script>
 
 <template>

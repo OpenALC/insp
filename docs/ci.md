@@ -10,9 +10,11 @@
 
 工作流只授予仓库读取权限，不依赖发布签名密钥。Android 调试包用于模拟器开发，正式发行需另设签名。
 
-鸿蒙另有 `HarmonyOS native build` 手动工作流，运行在已安装 DevEco Studio SDK、ohpm 和 hvigorw 的 Windows runner，标签为 `harmonyos`。这个 runner 尚需管理员注册；仓库不会自动安装或注册本机 runner。公开仓库的 fork PR 不会触发该任务。
+鸿蒙另有 `HarmonyOS native build` 手动工作流，运行在已安装 DevEco Studio SDK、ohpm 和 hvigorw 的 Windows runner，标签为 `harmonyos`。验证使用一次性 `--ephemeral` runner：领取一个任务后自动注销，不安装常驻服务。后续手动运行前需先提供对应 runner；公开仓库的 fork PR 不会触发该任务。
 
-鸿蒙编译所需 SDK 不随代码分发，开发者的证书、profile、密钥库和 local.properties 不提交到仓库。手动工作流先打包共享前端，再由宿主编译 HAP；没有已配置 runner 时不要启动该工作流等待队列。
+鸿蒙编译所需 SDK 不随代码分发，开发者的证书、profile、密钥库和 local.properties 不提交到仓库。手动工作流先打包共享前端，再由宿主编译 unsigned HAP。原生构建使用当前安装的 API 26 SDK；模拟器支持未签名调试包，真机和发行签名另外配置。
+
+本机开发环境需在 runner 的 PATH 中提供 `ohpm`、`hvigorw`，并设置 `DEVECO_SDK_HOME`。runner 工作目录与日常开发目录分开，构建输出只上传 HAP，不上传设备数据或签名材料。
 
 模拟器功能验证在开发过程中直接运行应用完成，不把临时探针或验证脚本加入项目。
 

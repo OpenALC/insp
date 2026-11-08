@@ -72,15 +72,17 @@ src/
   domain/mindmap.ts        思维树的稳定节点模型
   domain/models.ts         文档、仓库、附件与平台能力契约
   platform/native.ts       共用原生命令到业务接口的适配
-  platform/tauri.ts        Windows / 后续 Android 宿主
-  platform/harmonyos.ts    ArkWeb 宿主桥接契约与适配工厂
+  platform/tauri.ts        Windows / Android 宿主与生命周期
+  platform/harmonyos.ts    ArkWeb 平台适配
+  platform/harmonyos-host.ts  原生请求回调与保存桥接
   sync/contracts.ts        密文信封、增量同步、冲突与密钥接口
 src-tauri/
   src/storage.rs           SQLite 与附件存储
   src/lib.rs               Tauri IPC 命令
   migrations/              数据库迁移
 docs/architecture.md       扩展边界与同步协议约定
-platforms/                 Android、HarmonyOS 接入说明
+platforms/harmonyos/       ArkTS 宿主、ArkData 存储与 HAP 工程
+platforms/android/         Android 开发说明（原生工程在 src-tauri/gen/android）
 server/                   Linux 同步服务边界说明
 ```
 

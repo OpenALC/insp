@@ -1,0 +1,8 @@
+{
+  "string": [
+    { "name": "app_name", "value": "Insp Notes" },
+    { "name": "module_desc", "value": "Local-first notes" },
+    { "name": "EntryAbility_desc", "value": "Insp Notes" },
+    { "name": "EntryAbility_label", "value": "Insp Notes" }
+  ]
+}

@@ -4,7 +4,7 @@
 
 `WorkspaceRepository` 管理笔记与分组，`AttachmentStore` 处理附件，组件只依赖这两个业务接口。`createNativeAdapter` 统一命令的 JSON 传输格式。数据库时间统一使用 UTC ISO 8601，展示时由客户端转换。
 
-当前持久化实现是 Rust + bundled SQLite。Windows 从应用数据目录打开数据库，通过原生命令访问；Vue 不直接执行 SQL。正常保存使用事务，删除笔记保留 tombstone；删除分组在一个事务里解除笔记归属并删除分组。
+Windows 和 Android 使用 Rust + bundled SQLite，HarmonyOS 使用 ArkData SQLite。各宿主从应用私有目录打开数据库，通过原生命令访问；Vue 不直接执行 SQL。正常保存使用事务，删除笔记保留 tombstone；删除分组在一个事务里解除笔记归属并删除分组。
 
 本地 `revision` 每次保存递增，与未来的 `server_revision` 分离。当前不产生网络请求，也不写入待上传队列。后续启用同步时，只有 `syncPolicy=sync` 的记录才进入队列；提交笔记和对应加密 outbox 记录必须在同一事务中完成。
 
@@ -24,9 +24,9 @@ Windows 使用 `import_image_bytes` 的二进制 IPC，名称通过编码后的 
 
 ## 跨端接入
 
-- Windows：当前运行目标，Tauri IPC + Rust 存储。
-- Android：复用 Web 资源与 Tauri 核心；后续初始化 Android 工程并适配文件选择、图片粘贴、键盘、生命周期与系统密钥库。
-- HarmonyOS：ArkTS + ArkWeb 加载本地构建资源，接入 `HarmonyHostBridge`。宿主负责 request 的异步结果、原生 SQLite/附件存储与安全图片资源映射。现有 TypeScript 适配器不会自行让 ArkWeb 支持 Promise 跨桥，需宿主实现请求 ID 和回调/消息通道。
+- Windows：Tauri IPC + Rust 存储，关闭窗口前等待保存。
+- Android：复用 Web 资源与 Tauri 核心，原生工程位于 `src-tauri/gen/android`；文件选择、系统返回键、后台保存接入原生生命周期。手机使用列表与编辑器单页导航。
+- HarmonyOS：`platforms/harmonyos` 的 ArkTS + ArkWeb 宿主加载打包 Web 资源，以 `inspNative.postMessage` 请求 ID 和 `__inspBridgeResponse` 回调实现异步命令；ArkData 管理分组、笔记和附件，资源拦截器只映射打包资源及应用附件。暂停和退出通过 `__inspBeforeClose` 提交保存。
 
 不要把 Tauri 的 `convertFileSrc` 地址直接用于鸿蒙。ArkWeb 的资源拦截器应只服务应用附件目录，不开放任意文件读取。宿主暂停/退出前调用前端的保存入口；不能依赖 JS 定时器在后台持续执行。
 

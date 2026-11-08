@@ -344,7 +344,10 @@ async function showNoteList() {
 }
 
 function navigateBack(event: Event) {
-  if (sidebarOpen.value) {
+  if (groupDialog.value) {
+    event.preventDefault()
+    groupDialog.value = null
+  } else if (sidebarOpen.value) {
     event.preventDefault()
     sidebarOpen.value = false
   } else if (mobilePane.value === 'editor') {

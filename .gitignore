@@ -1,4 +1,5 @@
 node_modules/
+.artifacts/
 dist/
 src-tauri/target/
 src-tauri/gen/*
@@ -8,6 +9,8 @@ src-tauri/gen/android/tauri.properties
 platforms/harmonyos/entry/src/main/resources/rawfile/web/
 **/build/
 **/.gradle/
+**/.kotlin/
+src-tauri/gen/android/app/src/main/assets/
 **/.hvigor/
 **/oh_modules/
 **/local.properties
