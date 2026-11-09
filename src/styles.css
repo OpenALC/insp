@@ -341,7 +341,7 @@ button:disabled { cursor: not-allowed; }
 .error-banner button:hover { background: var(--danger-soft); }
 
 /* Group dialog */
-.modal-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 24px; background: var(--overlay); backdrop-filter: blur(4px); animation: fade-in .15s ease-out; }
+.modal-backdrop { position: fixed; z-index: 120; inset: 0; display: grid; place-items: center; padding: 24px; background: var(--overlay); backdrop-filter: blur(4px); animation: fade-in .15s ease-out; }
 .group-dialog { position: relative; width: min(100%, 390px); padding: 28px; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); box-shadow: 0 22px 65px rgba(var(--shadow-rgb), .23); animation: dialog-in .18s ease-out; }
 .dialog-icon { display: grid; width: 39px; height: 39px; place-items: center; color: var(--ink); border: 1px solid var(--brand-border); border-radius: 12px; background: var(--brand-soft); }
 .dialog-close { position: absolute; top: 16px; right: 16px; display: grid; width: 30px; height: 30px; place-items: center; color: var(--ink); border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
