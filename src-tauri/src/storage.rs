@@ -357,9 +357,9 @@ impl Storage {
                 "",
             ),
             "mindmap" => (
-                "未命名的思维笔记",
-                serde_json::json!({"type":"mindmap","root":{"id":Uuid::new_v4().to_string(),"text":"未命名的思维笔记","children":[]}}),
-                "未命名的思维笔记",
+                "未命名的灵感笔记",
+                serde_json::json!({"type":"mindmap","root":{"id":Uuid::new_v4().to_string(),"text":"未命名的灵感笔记","children":[]}}),
+                "未命名的灵感笔记",
             ),
             _ => return Err("不支持的笔记类型。".into()),
         };
@@ -386,7 +386,7 @@ impl Storage {
             let title = root
                 .as_str()
                 .filter(|s| !s.trim().is_empty())
-                .unwrap_or("未命名的思维笔记")
+                .unwrap_or("未命名的灵感笔记")
                 .to_owned();
             *root = serde_json::json!(title);
             title

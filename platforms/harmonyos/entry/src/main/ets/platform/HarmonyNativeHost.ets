@@ -2,6 +2,8 @@ import { webview } from '@kit.ArkWeb';
 import { http } from '@kit.NetworkKit';
 import { NotesRepository, NoteKind, NoteWrite, VaultCommitInput } from '../data/NotesRepository';
 import { DeviceSecurity } from './DeviceSecurity';
+import { ShareExport, ExportFileArgs } from './ShareExport';
+import { common } from '@kit.AbilityKit';
 
 interface BridgeRequest {
   id: string;
@@ -25,6 +27,10 @@ interface SecretSetArgs {
 
 interface AppearanceArgs {
   dark: boolean;
+}
+
+interface ShareTextArgs {
+  text: string;
 }
 
 export interface DeviceInsets {
@@ -82,13 +88,15 @@ export class HarmonyNativeHost {
   private readonly repository: NotesRepository;
   private readonly controller: webview.WebviewController;
   private readonly security: DeviceSecurity;
+  private readonly sharing: ShareExport;
   private vaultQueue: Promise<void> = Promise.resolve();
   private disposed: boolean = false;
 
-  constructor(repository: NotesRepository, controller: webview.WebviewController, security: DeviceSecurity) {
+  constructor(repository: NotesRepository, controller: webview.WebviewController, security: DeviceSecurity, context: common.UIAbilityContext) {
     this.repository = repository;
     this.controller = controller;
     this.security = security;
+    this.sharing = new ShareExport(context);
   }
 
   close(): void {
@@ -137,6 +145,15 @@ export class HarmonyNativeHost {
         break;
       case 'device_set_appearance':
         await HarmonyHostRuntime.setAppearance((request.args as AppearanceArgs).dark);
+        break;
+      case 'device_share_text':
+        await this.sharing.shareText((request.args as ShareTextArgs).text);
+        break;
+      case 'device_share_file':
+        await this.sharing.shareFile(request.args as ExportFileArgs);
+        break;
+      case 'device_save_file':
+        result = await this.sharing.saveFile(request.args as ExportFileArgs);
         break;
       case 'load_workspace':
         result = await this.repository.loadWorkspace();

@@ -162,3 +162,25 @@ pub async fn insets<R: Runtime>(_app: AppHandle<R>) -> Result<Insets, String> {
 pub async fn set_appearance<R: Runtime>(_app: AppHandle<R>, _dark: bool) -> Result<(), String> {
     Ok(())
 }
+
+pub async fn share_text<R: Runtime>(_app: AppHandle<R>, _text: String) -> Result<(), String> {
+    Err("Windows 使用网页系统分享接口。".into())
+}
+
+pub async fn share_file<R: Runtime>(
+    _app: AppHandle<R>,
+    _name: String,
+    _mime_type: String,
+    _base64: String,
+) -> Result<(), String> {
+    Err("Windows 使用网页系统分享接口。".into())
+}
+
+pub async fn save_file<R: Runtime>(
+    _app: AppHandle<R>,
+    _name: String,
+    _mime_type: String,
+    _base64: String,
+) -> Result<bool, String> {
+    Err("Windows 使用系统文件选择器。".into())
+}

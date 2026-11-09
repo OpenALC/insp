@@ -316,12 +316,12 @@ function adjustZoom(delta: number) {
 </script>
 
 <template>
-  <section ref="editorElement" class="mindmap-editor" :data-editable="editable" aria-label="思维笔记编辑器">
+  <section ref="editorElement" class="mindmap-editor" :data-editable="editable" aria-label="灵感笔记编辑器">
 
     <div ref="viewport" v-if="viewMode === 'outline'" class="mindmap-outline-viewport content-zoom-viewport">
       <div class="content-zoom-extent" :style="extentStyle">
         <div ref="contentSurface" class="content-zoom-surface" :style="surfaceStyle">
-          <ul class="mindmap-outline-tree" role="tree" aria-label="思维笔记主题列表">
+          <ul class="mindmap-outline-tree" role="tree" aria-label="灵感笔记主题列表">
             <MindMapOutlineNode
               :node="documentState.root"
               :depth="0"

@@ -45,7 +45,7 @@ struct Index {
     if (!this.active || !this.blankLoaded || this.repository === null || this.security === null || this.proxyRegistered) {
       return;
     }
-    this.nativeHost = new HarmonyNativeHost(this.repository, this.controller, this.security);
+    this.nativeHost = new HarmonyNativeHost(this.repository, this.controller, this.security, getContext(this) as common.UIAbilityContext);
     this.controller.registerJavaScriptProxy(this.nativeHost, 'inspNative', ['postMessage']);
     HarmonyHostRuntime.attach(this.controller, this.nativeHost);
     this.proxyRegistered = true;

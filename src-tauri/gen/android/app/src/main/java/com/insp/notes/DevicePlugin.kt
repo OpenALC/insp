@@ -2,15 +2,20 @@ package com.insp.notes
 
 import android.app.Activity
 import android.app.KeyguardManager
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Intent
 import android.hardware.biometrics.BiometricManager
 import android.hardware.biometrics.BiometricPrompt
 import android.os.Build
 import android.os.CancellationSignal
+import android.util.Base64
 import android.webkit.WebView
 import androidx.activity.result.ActivityResult
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
+import androidx.core.content.FileProvider
 import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
@@ -18,6 +23,7 @@ import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.Plugin
 import java.util.concurrent.Executors
+import java.io.File
 
 @InvokeArg
 class SecretIdArgs {
@@ -35,6 +41,18 @@ class AppearanceArgs {
     var dark: Boolean = false
 }
 
+@InvokeArg
+class ShareTextArgs {
+    lateinit var text: String
+}
+
+@InvokeArg
+class ExportFileArgs {
+    lateinit var name: String
+    lateinit var mimeType: String
+    lateinit var base64: String
+}
+
 @TauriPlugin
 class DevicePlugin(private val activity: Activity) : Plugin(activity) {
     private val secrets = DeviceSecrets(activity.applicationContext)
@@ -44,6 +62,7 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
     }
     private var pendingAuthentication: Invoke? = null
     private var cancellation: CancellationSignal? = null
+    private var pendingSaveBytes: ByteArray? = null
 
     override fun load(webView: WebView) {
         (activity as MainActivity).deviceInsets.attach(webView)
@@ -178,6 +197,63 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
                 isAppearanceLightNavigationBars = !args.dark
             }
             invoke.resolve()
+        }
+    }
+
+    @Command
+    fun shareText(invoke: Invoke) {
+        val text = invoke.parseArgs(ShareTextArgs::class.java).text
+        val clipboard = activity.getSystemService(ClipboardManager::class.java)
+        clipboard.setPrimaryClip(ClipData.newPlainText("拾页笔记", text))
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        activity.startActivity(Intent.createChooser(send, "分享笔记"))
+        invoke.resolve()
+    }
+
+    @Command
+    fun shareFile(invoke: Invoke) {
+        val args = invoke.parseArgs(ExportFileArgs::class.java)
+        val directory = File(activity.cacheDir, "shared-notes").apply { mkdirs() }
+        val file = File(directory, File(args.name).name.replace('\\', '_'))
+        file.writeBytes(Base64.decode(args.base64, Base64.DEFAULT))
+        val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", file)
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = args.mimeType
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        activity.startActivity(Intent.createChooser(send, "分享笔记").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+        invoke.resolve()
+    }
+
+    @Command
+    fun saveFile(invoke: Invoke) {
+        val args = invoke.parseArgs(ExportFileArgs::class.java)
+        pendingSaveBytes = Base64.decode(args.base64, Base64.DEFAULT)
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = args.mimeType
+            putExtra(Intent.EXTRA_TITLE, File(args.name).name.replace('\\', '_'))
+        }
+        startActivityForResult(invoke, intent, "fileSaveResult")
+    }
+
+    @ActivityCallback
+    fun fileSaveResult(invoke: Invoke, result: ActivityResult) {
+        val bytes = pendingSaveBytes
+        pendingSaveBytes = null
+        if (result.resultCode != Activity.RESULT_OK || result.data?.data == null || bytes == null) {
+            invoke.resolveObject(false)
+            return
+        }
+        try {
+            activity.contentResolver.openOutputStream(result.data!!.data!!, "wt")!!.use { it.write(bytes) }
+            invoke.resolveObject(true)
+        } catch (error: Exception) {
+            invoke.reject("无法保存文件：${error.message}")
         }
     }
 

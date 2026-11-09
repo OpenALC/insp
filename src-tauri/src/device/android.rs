@@ -62,3 +62,35 @@ pub async fn insets<R: Runtime>(app: AppHandle<R>) -> Result<Insets, String> {
 pub async fn set_appearance<R: Runtime>(app: AppHandle<R>, dark: bool) -> Result<(), String> {
     call(app, "setAppearance", serde_json::json!({ "dark": dark })).await
 }
+
+pub async fn share_text<R: Runtime>(app: AppHandle<R>, text: String) -> Result<(), String> {
+    call(app, "shareText", serde_json::json!({ "text": text })).await
+}
+
+pub async fn share_file<R: Runtime>(
+    app: AppHandle<R>,
+    name: String,
+    mime_type: String,
+    base64: String,
+) -> Result<(), String> {
+    call(
+        app,
+        "shareFile",
+        serde_json::json!({ "name": name, "mimeType": mime_type, "base64": base64 }),
+    )
+    .await
+}
+
+pub async fn save_file<R: Runtime>(
+    app: AppHandle<R>,
+    name: String,
+    mime_type: String,
+    base64: String,
+) -> Result<bool, String> {
+    call(
+        app,
+        "saveFile",
+        serde_json::json!({ "name": name, "mimeType": mime_type, "base64": base64 }),
+    )
+    .await
+}

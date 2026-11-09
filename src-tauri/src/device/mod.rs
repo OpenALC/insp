@@ -70,3 +70,28 @@ pub async fn device_set_appearance<R: Runtime>(
 ) -> Result<(), String> {
     platform::set_appearance(app, dark).await
 }
+
+#[tauri::command]
+pub async fn device_share_text<R: Runtime>(app: AppHandle<R>, text: String) -> Result<(), String> {
+    platform::share_text(app, text).await
+}
+
+#[tauri::command]
+pub async fn device_share_file<R: Runtime>(
+    app: AppHandle<R>,
+    name: String,
+    mime_type: String,
+    base64: String,
+) -> Result<(), String> {
+    platform::share_file(app, name, mime_type, base64).await
+}
+
+#[tauri::command]
+pub async fn device_save_file<R: Runtime>(
+    app: AppHandle<R>,
+    name: String,
+    mime_type: String,
+    base64: String,
+) -> Result<bool, String> {
+    platform::save_file(app, name, mime_type, base64).await
+}

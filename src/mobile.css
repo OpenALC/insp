@@ -62,6 +62,10 @@ button.settings-row { cursor: pointer; }
 .choice-check { margin-left: auto; color: var(--brand-strong); }
 .choice-back { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 10px 15px; border: 0; border-radius: 15px; color: var(--ink); background: transparent; font-size: 17px; text-align: left; }
 .destructive-action { margin-top: 12px; color: var(--danger); }
+.export-note, .export-status { margin: 12px 18px; color: var(--ink); font-size: 12px; line-height: 1.6; }
+.export-note { opacity: .7; }
+.export-status { color: var(--brand-strong); }
+.note-options .sheet-action:disabled { opacity: .5; }
 .tap-ripple { position: absolute; z-index: 3; display: block; border-radius: 50%; background: rgba(var(--brand-rgb), .26); pointer-events: none; animation: tap-bloom .48s ease-out forwards; }
 @keyframes tap-bloom { from { transform: scale(0); opacity: 1; } to { transform: scale(1); opacity: 0; } }
 .sheet-cancel { display: block; width: 100%; min-height: 50px; margin-top: 12px; color: var(--ink); border: 0; border-radius: 16px; background: var(--surface-soft); font-size: 16px; }
@@ -125,7 +129,8 @@ button.settings-row { cursor: pointer; }
   .mobile-group-filters button.active { background: var(--paper); font-weight: 600; }
   .list-meta { display: none; }
   .note-list { display: block; overflow: visible; columns: 2; column-gap: 12px; margin: 0; padding: 0; }
-  .note-card, .note-card.selected { display: inline-flex; flex-direction: column; width: 100%; min-height: 190px; height: auto; margin: 0 0 12px; padding: 19px 16px 15px; break-inside: avoid; text-align: left; color: var(--ink); border: 0; border-radius: 18px; box-shadow: none; background: var(--paper); transform: none; transition: transform .18s var(--motion-out), background .18s; }
+  .note-list, .list-empty { touch-action: pan-y pinch-zoom; }
+  .note-card, .note-card.selected { display: inline-flex; flex-direction: column; width: 100%; height: auto; margin: 0 0 12px; padding: 19px 16px 15px; break-inside: avoid; text-align: left; color: var(--ink); border: 0; border-radius: 18px; box-shadow: none; background: var(--paper); transform: none; transition: transform .18s var(--motion-out), background .18s; }
   .note-card:active { transform: scale(.97); }
   .note-card.multi-selected { background: var(--brand-tint); box-shadow: inset 0 0 0 2px var(--brand); }
   .note-selection-mark { position: absolute; top: 12px; right: 12px; display: grid; width: 23px; height: 23px; place-items: center; border: 2px solid var(--brand); border-radius: 50%; color: var(--ink); background: var(--paper); }
@@ -139,7 +144,6 @@ button.settings-row { cursor: pointer; }
   .note-card-foot { width: 100%; margin-top: auto; padding-top: 8px; font-size: 11px; }
   .note-group-tag { max-width: 62px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
   .layout-list .note-list { columns: 1; }
-  .layout-list .note-card { min-height: 125px; }
   .layout-list .note-preview { -webkit-line-clamp: 2; }
   .floating-compose { position: absolute; z-index: 15; left: 50%; bottom: calc(22px + var(--safe-bottom)); display: flex; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: 36px; color: var(--ink); background: var(--paper); box-shadow: 0 10px 32px rgba(var(--shadow-rgb), .12); transform: translateX(-50%); }
   .floating-compose button { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; padding: 0 19px; border: 0; border-radius: 26px; color: var(--ink); background: transparent; font-size: 14px; white-space: nowrap; transition: padding .42s cubic-bezier(.18, 1.45, .32, 1), gap .42s cubic-bezier(.18, 1.45, .32, 1); }

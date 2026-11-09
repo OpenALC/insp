@@ -3,7 +3,9 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, r
 import type { JSONContent } from '@tiptap/core'
 import type { Note, NoteContent, NoteGroup, NoteKind, NoteSummary, NoteWrite, PrivacyMode, SyncPolicy, WorkspaceSnapshot } from './domain/models'
 import { mindMapPreview, mindMapText, UNTITLED_MIND_MAP, type MindMapDocument } from './domain/mindmap'
-import { platform, registerCloseGuard, vault, getDeviceInsets, setDeviceAppearance } from './platform'
+import { platform, registerCloseGuard, vault, getDeviceInsets, setDeviceAppearance, shareNoteText, shareNoteImage, saveNoteExport } from './platform'
+import { exportNote } from './export'
+import type { ExportFile } from './export'
 import VaultPanel from './components/VaultPanel.vue'
 import SettingsPage from './components/SettingsPage.vue'
 import MindMapCardPreview from './components/MindMapCardPreview.vue'
@@ -35,6 +37,10 @@ import {
   Redo2,
   Pencil,
   Search,
+  Share2,
+  Image as ImageIcon,
+  Copy,
+  FileDown,
   Settings2,
   Shield,
   ShieldCheck,
@@ -46,6 +52,16 @@ import {
 type SaveState = 'saved' | 'unsaved' | 'saving' | 'error'
 type GroupDialog = { mode: 'create' } | { mode: 'rename'; groupId: string }
 type RichTextEditorHandle = { awaitPendingImports(): Promise<void>; finishEditing(): void; focusEditor(): void; undo(): void; redo(): void; canUndo: boolean; canRedo: boolean }
+
+function mindNoteTitle(title: string) {
+  return !title || title === '未命名的思维笔记' ? UNTITLED_MIND_MAP : title
+}
+function withMindNoteTitle(note: Note): Note {
+  if (note.kind !== 'mindmap') return note
+  const map = note.content as MindMapDocument
+  const title = mindNoteTitle(map.root.text)
+  return { ...note, title, content: { ...map, root: { ...map.root, text: title } } }
+}
 
 const snapshot = ref<WorkspaceSnapshot | null>(null)
 const activeNote = ref<Note | null>(null)
@@ -80,7 +96,9 @@ const listScrolling = ref(false)
 const selectionMode = ref(false)
 const selectedNoteIds = ref(new Set<string>())
 const batchGroupOpen = ref(false)
-const noteChoice = ref<'group' | 'privacy' | 'sync' | null>(null)
+const noteChoice = ref<'group' | 'privacy' | 'sync' | 'export' | null>(null)
+const exportBusy = ref(false)
+const exportStatus = ref('')
 const listMenuOpen = ref(false)
 const newNoteFocus = ref(false)
 const privacyCovered = ref(false)
@@ -228,9 +246,39 @@ function finishMobileEditing() {
 async function openNoteOptions() {
   optionsRestingHeight.value = mobileLayout.value && keyboardVisible.value ? fullViewportHeight : 0
   noteChoice.value = null
+  exportStatus.value = ''
   noteSettingsOpen.value = true
   await nextTick()
   optionsPanel.value?.focus({ preventScroll: true })
+}
+
+async function exportCurrentNote(format: 'png' | 'plaintext' | 'markdown' | 'docx' | 'pdf') {
+  if (exportBusy.value) return
+  exportBusy.value = true
+  exportStatus.value = ''
+  try {
+    await richEditor.value?.awaitPendingImports()
+    await nextTick()
+    const note = activeNote.value
+    if (!note) return
+    if (note.privacy === 'private' && !vault.state.privateVisible) throw new Error('请先解锁隐私笔记。')
+    const resolveAttachment = (id: string) => platform.attachments.resolveImage(id)
+    if (format === 'plaintext') {
+      const content = await exportNote(note, 'plaintext', resolveAttachment)
+      const result = await shareNoteText(content, note.title)
+      exportStatus.value = result === 'shared' ? '已复制正文并打开系统分享' : '已复制正文'
+    } else {
+      const file: ExportFile = await exportNote(note, format, resolveAttachment)
+      if (format === 'png') {
+        const result = await shareNoteImage(file)
+        exportStatus.value = result === 'shared' ? '已打开系统图片分享' : '图片已复制到剪贴板'
+      } else if (await saveNoteExport(file)) exportStatus.value = `已导出 ${file.filename}`
+    }
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === 'AbortError')) reportError(error)
+  } finally {
+    exportBusy.value = false
+  }
 }
 
 let draftVersion = 0
@@ -247,7 +295,80 @@ let remoteRefreshTimer: ReturnType<typeof setInterval> | undefined
 const workspaceAvailable = computed(() => vault.state.ready && vault.state.initialized && !vault.state.locked && !vault.state.migrationRequired)
 
 const groups = computed(() => snapshot.value?.groups ?? [])
+const visibleGroupFilters = computed(() => [
+  { key: 'all', name: '全部' },
+  { key: 'ungrouped', name: '未分组' },
+  ...groups.value.map(group => ({ key: `group:${group.id}`, name: group.name })),
+])
+const groupFiltersElement = ref<HTMLElement>()
+watch(filterKey, async () => {
+  await nextTick()
+  if (!mobileLayout.value || selectionMode.value) return
+  const strip = groupFiltersElement.value
+  const active = strip?.querySelector<HTMLElement>('.active')
+  if (!strip || !active) return
+  const left = active.offsetLeft
+  if (left < strip.scrollLeft) strip.scrollLeft = left
+  else if (left + active.offsetWidth > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = left + active.offsetWidth - strip.clientWidth
+})
+const canSwipeGroups = computed(() => mobileLayout.value && mobilePane.value === 'list'
+  && !isLoading.value && !isTransitioning.value && !selectionMode.value && !sidebarOpen.value
+  && !settingsOpen.value && !groupDialog.value && !vaultPanelMode.value && !privacyCovered.value
+  && !noteSettingsOpen.value && !batchGroupOpen.value && !listMenuOpen.value && !keyboardVisible.value
+  && visibleGroupFilters.value.some(filter => filter.key === filterKey.value))
+let groupSwipe: { id: number; x: number; y: number; started: number; filter: string; horizontal: boolean } | undefined
+let suppressHomeClickUntil = 0
+function onHomeTouchStart(event: TouchEvent) {
+  groupSwipe = undefined
+  if (!canSwipeGroups.value || event.touches.length !== 1) return
+  const target = event.target as HTMLElement
+  if (target.closest('.search-box, .mobile-group-filters, input, textarea, select, [contenteditable], a, button:not(.note-card)')) return
+  const touch = event.touches[0]!
+  // Leave both screen edges available to sidebar and system navigation gestures.
+  if (touch.clientX <= 32 || touch.clientX >= window.innerWidth - 32) return
+  groupSwipe = { id: touch.identifier, x: touch.clientX, y: touch.clientY, started: performance.now(), filter: filterKey.value, horizontal: false }
+}
+function onHomeTouchMove(event: TouchEvent) {
+  const swipe = groupSwipe
+  if (!swipe) return
+  if (!canSwipeGroups.value || event.touches.length !== 1 || swipe.filter !== filterKey.value) {
+    groupSwipe = undefined
+    return
+  }
+  const touch = event.touches[0]!
+  const dx = Math.abs(touch.clientX - swipe.x)
+  const dy = Math.abs(touch.clientY - swipe.y)
+  if (!swipe.horizontal) {
+    if (Math.max(dx, dy) < 10) return
+    clearTimeout(longPressTimer)
+    if (dx <= dy * 1.5) { groupSwipe = undefined; return }
+    swipe.horizontal = true
+  }
+  suppressHomeClickUntil = performance.now() + 600
+  if (event.cancelable) event.preventDefault()
+}
+function onHomeTouchEnd(event: TouchEvent) {
+  const swipe = groupSwipe
+  groupSwipe = undefined
+  if (!swipe?.horizontal) return
+  suppressHomeClickUntil = performance.now() + 400
+  const touch = Array.from(event.changedTouches).find(touch => touch.identifier === swipe.id)
+  if (!touch || event.touches.length || !canSwipeGroups.value || filterKey.value !== swipe.filter) return
+  const dx = touch.clientX - swipe.x
+  const dy = touch.clientY - swipe.y
+  if (Math.abs(dx) < 56 || Math.abs(dx) <= Math.abs(dy) * 1.5 || performance.now() - swipe.started > 900) return
+  const index = visibleGroupFilters.value.findIndex(filter => filter.key === swipe.filter)
+  const next = visibleGroupFilters.value[index + (dx < 0 ? 1 : -1)]
+  if (next) chooseFilter(next.key)
+}
+function onHomeClick(event: MouseEvent) {
+  if (performance.now() < suppressHomeClickUntil) {
+    event.preventDefault()
+    event.stopPropagation()
+  }
+}
 const allNotes = computed(() => [...(snapshot.value?.notes ?? [])]
+  .map(note => note.kind === 'mindmap' ? { ...note, title: mindNoteTitle(note.title) } : note)
   .filter((note) => note.privacy === (filterKey.value === 'private' ? 'private' : 'normal'))
   .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
 const ungroupedCount = computed(() => allNotes.value.filter((note) => note.groupId === null).length)
@@ -282,7 +403,7 @@ function errorText(error: unknown) {
 }
 
 function reportError(error: unknown) {
-  actionError.value = errorText(error)
+  actionError.value = errorText(error).replaceAll('思维笔记', '灵感笔记')
   showError.value = true
 }
 
@@ -450,6 +571,7 @@ async function flushBeforeClose() {
 }
 
 function resetDraftState(note: Note, preserveEditing = false) {
+  note = withMindNoteTitle(note)
   activeNote.value = note
   if (!preserveEditing) {
     mobileEditing.value = false
@@ -743,6 +865,10 @@ async function createNote(kind: NoteKind = 'richtext') {
     const groupId = filterKey.value.startsWith('group:') ? filterKey.value.slice(6) : null
     let note = await platform.repository.createNote(filterKey.value === 'private' ? null : groupId, kind)
     if (filterKey.value === 'private') note = await vault.setNotePolicy(note.id, 'private', 'localOnly')
+    if (kind === 'mindmap') {
+      note = withMindNoteTitle(note)
+      note = await platform.repository.saveNote({ id: note.id, title: note.title, groupId: note.groupId, content: note.content, plainText: mindMapText(note.content as MindMapDocument) })
+    }
     if (snapshot.value) snapshot.value = { ...snapshot.value, notes: [summaryFromNote(note), ...snapshot.value.notes] }
     resetDraftState(note)
     mobileEditing.value = mobileLayout.value && kind === 'richtext'
@@ -773,7 +899,8 @@ async function createMindNoteFromBlank() {
   const id = activeNote.value?.id
   if (!id || !canCreateMindNote.value) return
   await runTransition(async () => {
-    const note = await platform.repository.convertToMindMap(id)
+    let note = withMindNoteTitle(await platform.repository.convertToMindMap(id))
+    note = await platform.repository.saveNote({ id: note.id, title: note.title, groupId: note.groupId, content: note.content, plainText: mindMapText(note.content as MindMapDocument) })
     replaceSummary(summaryFromNote(note))
     resetDraftState(note)
   })
@@ -781,6 +908,11 @@ async function createMindNoteFromBlank() {
 
 function updateDocument(content: NoteContent, plainText: string) {
   if (!activeNote.value) return
+  if (activeNote.value.kind === 'mindmap') {
+    const map = content as MindMapDocument
+    content = { ...map, root: { ...map.root, text: mindNoteTitle(map.root.text) } }
+    plainText = mindMapText(content as MindMapDocument)
+  }
   const title = activeNote.value.kind === 'mindmap' ? (content as MindMapDocument).root.text : activeNote.value.title
   activeNote.value = { ...activeNote.value, title, content }
   draftPlainText.value = plainText
@@ -1105,7 +1237,7 @@ onBeforeUnmount(() => {
       <div class="sidebar-bottom"><button class="sidebar-settings" type="button" @click="openSettings"><Settings2 :size="22" /><span>设置</span></button></div>
     </aside>
 
-    <section class="note-list-pane" :class="{ 'layout-list': listLayout === 'list' }" aria-label="笔记列表" @scroll="onListScroll">
+    <section class="note-list-pane" :class="{ 'layout-list': listLayout === 'list' }" aria-label="笔记列表" @scroll="onListScroll" @touchstart.passive="onHomeTouchStart" @touchmove="onHomeTouchMove" @touchend="onHomeTouchEnd" @touchcancel="groupSwipe = undefined" @click.capture="onHomeClick">
       <header class="list-pane-header">
         <div>
           <div class="eyebrow">拾页 / NOTES</div>
@@ -1113,7 +1245,7 @@ onBeforeUnmount(() => {
         </div>
         <div class="create-actions">
           <button class="create-note-button" type="button" aria-label="新建笔记" title="新建笔记" :disabled="isLoading || isTransitioning" @click="createNote('richtext')"><FilePlus2 :size="17" /><span>笔记</span></button>
-          <button class="create-note-button create-map-button" type="button" aria-label="新建思维导图" title="新建思维导图" :disabled="isLoading || isTransitioning" @click="createNote('mindmap')"><Workflow :size="17" /><span>导图</span></button>
+          <button class="create-note-button create-map-button" type="button" aria-label="新建灵感笔记" title="新建灵感笔记" :disabled="isLoading || isTransitioning" @click="createNote('mindmap')"><Workflow :size="17" /><span>灵感笔记</span></button>
         </div>
       </header>
 
@@ -1122,10 +1254,8 @@ onBeforeUnmount(() => {
         <input v-model="searchQuery" type="search" placeholder="搜索笔记" aria-label="搜索笔记标题和正文摘要" />
       </label>
 
-      <nav class="mobile-group-filters" aria-label="笔记分组">
-        <button :class="{ active: filterKey === 'all' }" @click="chooseFilter('all')">全部</button>
-        <button :class="{ active: filterKey === 'ungrouped' }" @click="chooseFilter('ungrouped')">未分组</button>
-        <button v-for="group in groups" :key="group.id" :class="{ active: filterKey === 'group:' + group.id }" @click="chooseFilter('group:' + group.id)">{{ group.name }}</button>
+      <nav ref="groupFiltersElement" class="mobile-group-filters" aria-label="笔记分组">
+        <button v-for="filter in visibleGroupFilters" :key="filter.key" :class="{ active: filterKey === filter.key }" :aria-current="filterKey === filter.key ? 'true' : undefined" :disabled="isTransitioning" @click="chooseFilter(filter.key)">{{ filter.name }}</button>
       </nav>
       <div class="list-meta"><span>{{ searchQuery ? `找到 ${filteredNotes.length} 篇` : `${filteredNotes.length} 篇笔记` }}</span><span class="sort-label"><Clock3 :size="13" />最近编辑</span></div>
 
@@ -1138,7 +1268,7 @@ onBeforeUnmount(() => {
             <span class="note-card-topline"><strong>{{ note.title || (note.kind === 'mindmap' ? UNTITLED_MIND_MAP : '未命名笔记') }}</strong></span>
             <MindMapCardPreview v-if="note.kind === 'mindmap' && note.mindMapPreview" :preview="note.mindMapPreview" />
             <span v-else class="note-preview">{{ note.preview || '还没有正文，点开继续记录。' }}</span>
-            <span class="note-card-foot"><time>{{ formatDate(note.updatedAt) }}</time><span v-if="note.groupId" class="note-group-tag">{{ groups.find((item) => item.id === note.groupId)?.name ?? '分组' }}</span><Workflow v-if="note.kind === 'mindmap'" :size="15" aria-label="思维笔记" /></span>
+            <span class="note-card-foot"><time>{{ formatDate(note.updatedAt) }}</time><span v-if="note.groupId" class="note-group-tag">{{ groups.find((item) => item.id === note.groupId)?.name ?? '分组' }}</span><Workflow v-if="note.kind === 'mindmap'" :size="15" aria-label="灵感笔记" /></span>
           </span>
           <ChevronRight class="note-card-chevron" :size="15" />
         </button>
@@ -1158,7 +1288,7 @@ onBeforeUnmount(() => {
       </div>
 
     </section>
-    <div class="floating-compose" :class="{ compact: listScrolling }" aria-label="创建笔记"><button class="compose-main" aria-label="新建普通笔记" :disabled="isTransitioning" @click="createNote('richtext')"><Plus :size="27" /><span>笔记</span></button><span class="compose-separator"></span><button aria-label="新建思维笔记" :disabled="isTransitioning" @click="createNote('mindmap')"><Workflow :size="24" /><span>思维笔记</span></button></div>
+    <div class="floating-compose" :class="{ compact: listScrolling }" aria-label="创建笔记"><button class="compose-main" aria-label="新建普通笔记" :disabled="isTransitioning" @click="createNote('richtext')"><Plus :size="27" /><span>笔记</span></button><span class="compose-separator"></span><button aria-label="新建灵感笔记" :disabled="isTransitioning" @click="createNote('mindmap')"><Workflow :size="24" /><span>灵感笔记</span></button></div>
     <div v-if="selectionMode" class="batch-actions" role="toolbar" aria-label="多选笔记操作"><button :disabled="!selectedNoteIds.size || isTransitioning" @click="batchGroupOpen = true"><Folder :size="21" />移动到</button><button class="danger" :disabled="!selectedNoteIds.size || isTransitioning" @click="deleteSelectedNotes"><Trash2 :size="21" />删除</button></div>
 
     <main class="editor-pane">
@@ -1183,7 +1313,7 @@ onBeforeUnmount(() => {
           <input v-if="!mobileLayout" v-model="editorTitle" class="document-title" :placeholder="titlePlaceholder" aria-label="笔记标题" :disabled="isTransitioning" @focus="mobileEditing = true" />
         </div>
 
-        <button v-if="canCreateMindNote" type="button" class="blank-mind-note" :disabled="isTransitioning" @pointerdown.prevent @click="createMindNoteFromBlank"><Workflow :size="17" />创建思维笔记<span>用层级整理想法</span></button>
+        <button v-if="canCreateMindNote" type="button" class="blank-mind-note" :disabled="isTransitioning" @pointerdown.prevent @click="createMindNoteFromBlank"><Workflow :size="17" />创建灵感笔记<span>用层级整理想法</span></button>
         <RichTextEditor
           v-if="activeNote.kind === 'richtext'"
           :key="activeNote.id"
@@ -1198,6 +1328,7 @@ onBeforeUnmount(() => {
         />
         <MindMapEditor
           v-else
+          aria-label="灵感笔记编辑器"
           ref="mindEditor"
           @focusin="onMindmapFocus"
           :key="activeNote.id"
@@ -1240,15 +1371,25 @@ onBeforeUnmount(() => {
             <button class="sheet-action choice-trigger" :disabled="isTransitioning" @click="noteChoice = 'group'"><Folder :size="21" /><span>移动到</span><span class="choice-value">{{ activeGroupName }}</span><ChevronRight :size="18" /></button>
             <button class="sheet-action choice-trigger" :disabled="isTransitioning" @click="noteChoice = 'privacy'"><Shield :size="21" /><span>隐私</span><span class="choice-value">{{ activeNote.privacy === 'private' ? '隐私笔记' : '普通笔记' }}</span><ChevronRight :size="18" /></button>
             <button class="sheet-action choice-trigger" :disabled="isTransitioning" @click="noteChoice = 'sync'"><Network :size="21" /><span>同步</span><span class="choice-value">{{ activeNote.syncPolicy === 'sync' ? '同步此笔记' : '仅本机' }}</span><ChevronRight :size="18" /></button>
+            <button class="sheet-action choice-trigger" :disabled="isTransitioning" @click="noteChoice = 'export'"><Share2 :size="21" /><span>分享与导出</span><span class="choice-value"></span><ChevronRight :size="18" /></button>
             <p v-if="activeNote.privacy === 'private' && activeNote.syncPolicy === 'sync'" class="private-sync-note">此隐私笔记已明确启用同步。</p>
             <button class="sheet-action destructive-action" :disabled="isTransitioning" @click="deleteActiveNote"><Trash2 :size="21" />删除笔记</button>
             <button class="sheet-cancel" @click="noteSettingsOpen = false">完成</button>
           </template>
           <template v-else>
-            <button class="choice-back" @click="noteChoice = null"><ArrowLeft :size="19" />{{ noteChoice === 'group' ? '选择分组' : noteChoice === 'privacy' ? '隐私设置' : '同步设置' }}</button>
+            <button class="choice-back" @click="noteChoice = null"><ArrowLeft :size="19" />{{ noteChoice === 'group' ? '选择分组' : noteChoice === 'privacy' ? '隐私设置' : noteChoice === 'sync' ? '同步设置' : '分享与导出' }}</button>
             <template v-if="noteChoice === 'group'"><button class="sheet-action" @click="changeNoteGroup(null)"><Inbox :size="21" />未分组<Check v-if="!activeNote.groupId" class="choice-check" :size="20" /></button><button v-for="group in groups" :key="group.id" class="sheet-action" @click="changeNoteGroup(group.id)"><Folder :size="21" />{{ group.name }}<Check v-if="activeNote.groupId === group.id" class="choice-check" :size="20" /></button></template>
             <template v-else-if="noteChoice === 'privacy'"><button class="sheet-action" @click="changePrivacy('normal')"><FileText :size="21" />普通笔记<Check v-if="activeNote.privacy === 'normal'" class="choice-check" :size="20" /></button><button class="sheet-action" @click="changePrivacy('private')"><LockKeyhole :size="21" />隐私笔记<Check v-if="activeNote.privacy === 'private'" class="choice-check" :size="20" /></button></template>
-            <template v-else><button class="sheet-action" @click="changeSyncPolicy('localOnly')"><Shield :size="21" />仅本机<Check v-if="activeNote.syncPolicy === 'localOnly'" class="choice-check" :size="20" /></button><button class="sheet-action" @click="changeSyncPolicy('sync')"><Network :size="21" />同步此笔记<Check v-if="activeNote.syncPolicy === 'sync'" class="choice-check" :size="20" /></button></template>
+            <template v-else-if="noteChoice === 'sync'"><button class="sheet-action" @click="changeSyncPolicy('localOnly')"><Shield :size="21" />仅本机<Check v-if="activeNote.syncPolicy === 'localOnly'" class="choice-check" :size="20" /></button><button class="sheet-action" @click="changeSyncPolicy('sync')"><Network :size="21" />同步此笔记<Check v-if="activeNote.syncPolicy === 'sync'" class="choice-check" :size="20" /></button></template>
+            <template v-else>
+              <button class="sheet-action" :disabled="exportBusy" @click="exportCurrentNote('png')"><ImageIcon :size="21" />以图片分享</button>
+              <button class="sheet-action" :disabled="exportBusy" @click="exportCurrentNote('plaintext')"><Copy :size="21" />以纯文本分享</button>
+              <button class="sheet-action" :disabled="exportBusy" @click="exportCurrentNote('markdown')"><FileDown :size="21" />导出 Markdown</button>
+              <button class="sheet-action" :disabled="exportBusy" @click="exportCurrentNote('docx')"><FileDown :size="21" />导出 Word</button>
+              <button class="sheet-action" :disabled="exportBusy" @click="exportCurrentNote('pdf')"><FileDown :size="21" />导出 PDF</button>
+              <p class="export-note">纯文本分享会自动复制正文。导出文件由系统选择保存位置。</p>
+              <p v-if="exportBusy || exportStatus" class="export-status" role="status">{{ exportBusy ? '正在准备文件…' : exportStatus }}</p>
+            </template>
           </template>
         </section></div>
     <VaultPanel

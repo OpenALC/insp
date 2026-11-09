@@ -155,7 +155,7 @@ export class EncryptedWorkspace implements VaultController {
         convertToMindMap: id => this.write(async () => {
           const previous = this.note(id)
           if (previous.kind !== 'richtext' || !isEmptyRichText(previous.content)) {
-            throw new Error('只有空白笔记可以创建思维笔记，已有正文和图片会保留。')
+            throw new Error('只有空白笔记可以创建灵感笔记，已有正文和图片会保留。')
           }
           const title = previous.title === '未命名笔记' ? UNTITLED_MIND_MAP : previous.title
           const content = createMindMapDocument(title)

@@ -39,3 +39,25 @@ pub async fn insets<R: Runtime>(_app: AppHandle<R>) -> Result<Insets, String> {
 pub async fn set_appearance<R: Runtime>(_app: AppHandle<R>, _dark: bool) -> Result<(), String> {
     Ok(())
 }
+
+pub async fn share_text<R: Runtime>(_app: AppHandle<R>, _text: String) -> Result<(), String> {
+    Err("此平台不支持系统分享。".into())
+}
+
+pub async fn share_file<R: Runtime>(
+    _app: AppHandle<R>,
+    _name: String,
+    _mime_type: String,
+    _base64: String,
+) -> Result<(), String> {
+    Err("此平台不支持系统分享。".into())
+}
+
+pub async fn save_file<R: Runtime>(
+    _app: AppHandle<R>,
+    _name: String,
+    _mime_type: String,
+    _base64: String,
+) -> Result<bool, String> {
+    Err("此平台不支持导出文件。".into())
+}

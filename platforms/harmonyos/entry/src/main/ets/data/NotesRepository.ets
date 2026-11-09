@@ -291,7 +291,7 @@ export class NotesRepository {
     await this.ensureLegacyWritable();
     const id = util.generateRandomUUID();
     const timestamp = new Date().toISOString();
-    const title = kind === 'mindmap' ? '未命名的思维笔记' : '未命名笔记';
+    const title = kind === 'mindmap' ? '未命名的灵感笔记' : '未命名笔记';
     let contentJson: string;
     if (kind === 'mindmap') {
       const children: MindMapBranch[] = [];
@@ -318,7 +318,7 @@ export class NotesRepository {
     const kind: NoteKind = contentType === 'mindmap' ? 'mindmap' : 'richtext';
     if (kind === 'mindmap') {
       const map = input.content as MindMapContent;
-      title = map.root.text.trim() ? map.root.text : '未命名的思维笔记';
+      title = map.root.text.trim() ? map.root.text : '未命名的灵感笔记';
       map.root.text = title;
     }
     const contentJson = JSON.stringify(input.content);
