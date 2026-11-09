@@ -173,9 +173,9 @@ function workspace(store: ReturnType<typeof createStore>, server?: MemorySyncSer
   return new EncryptedWorkspace(nativeInvoke(store, server), 'windows')
 }
 
-async function persistedMetadata(store: ReturnType<typeof createStore>) {
+async function persistedMetadata(store: ReturnType<typeof createStore>, password = PASSWORD) {
   const header = JSON.parse(store.header!) as VaultHeader
-  const key = await unlockVault(header, PASSWORD)
+  const key = await unlockVault(header, password)
   return decryptValue<{ receipts: Record<string, unknown>; pending: Record<string, { operation?: string; inFlight?: boolean }>; deleteIntents: Record<string, string> }>(
     key, header.id, '$meta', JSON.parse(store.rows.get('$meta')!) as CipherEnvelope,
   )
@@ -288,22 +288,23 @@ test('missing local entity rows after restart never turn remote receipts into de
   assert.deepEqual((await persistedMetadata(store)).deleteIntents, {})
 })
 
-test('private notes stay hidden; localOnly is not pushed until changed to sync', async () => {
+test('a PIN vault joins a second device and protects private notes until sync is enabled', async () => {
+  const pin = '048216'
   const server = new MemorySyncServer()
   const legacy = emptyLegacy()
   legacy.notes = [legacyNote('private-note', 'Private title', { privacy: 'private', syncPolicy: 'localOnly', body: 'Private body' })]
   const store = createStore(legacy)
   const source = workspace(store, server)
   await source.initialize()
-  await source.setup(PASSWORD)
+  await source.setup(pin)
   await source.configureSync(ENDPOINT)
 
   assert.deepEqual((await source.platform.repository.loadWorkspace()).notes, [])
-  assert.deepEqual((await persistedMetadata(store)).deleteIntents, {})
+  assert.deepEqual((await persistedMetadata(store, pin)).deleteIntents, {})
   await assert.rejects(source.platform.repository.getNote('private-note'), /请先解锁隐私笔记/)
   assert.equal(server.mutations.some(mutation => mutation.entityId === 'note:private-note'), false)
 
-  await source.revealPrivate(PASSWORD)
+  await source.revealPrivate(pin)
   await source.setNotePolicy('private-note', 'private', 'sync')
   source.hidePrivate()
   await source.syncNow()
@@ -311,10 +312,11 @@ test('private notes stay hidden; localOnly is not pushed until changed to sync',
 
   const second = workspace(createStore(), server)
   await second.initialize()
-  await second.setup(PASSWORD, source.state.connectionCode)
+  await second.setup(pin, source.state.connectionCode)
   assert.deepEqual((await second.platform.repository.loadWorkspace()).notes, [])
   await assert.rejects(second.platform.repository.getNote('private-note'), /请先解锁隐私笔记/)
-  await second.revealPrivate(PASSWORD)
+  await assert.rejects(second.revealPrivate('048217'), /口令错误/)
+  await second.revealPrivate(pin)
   assert.equal((await second.platform.repository.getNote('private-note')).title, 'Private title')
 })
 

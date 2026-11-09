@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { vaultPasswordKind } from '../security/crypto'
 import type { VaultController } from '../security/types'
 import ThemeSelect from './ThemeSelect.vue'
 import inspLogo from '../assets/insp-logo.png'
@@ -22,12 +23,22 @@ const emit = defineEmits<{
 const password = ref('')
 const connectionCode = ref('')
 const setupMode = ref<'create' | 'connect'>('create')
+const passwordMode = ref<'pin' | 'passphrase'>('pin')
 const endpoint = ref(props.vault.state.endpoint)
 const actionError = ref('')
 const busy = ref(false)
 const copied = ref(false)
 const isSetup = computed(() => !props.vault.state.initialized)
-const passwordLongEnough = computed(() => [...password.value].length >= 12)
+const isCreating = computed(() => isSetup.value && setupMode.value === 'create')
+const isCreatingPin = computed(() => isCreating.value && passwordMode.value === 'pin')
+const canSubmitPassword = computed(() => isCreating.value
+  ? vaultPasswordKind(password.value) === passwordMode.value
+  : password.value.length > 0)
+
+watch([setupMode, passwordMode], () => {
+  password.value = ''
+  actionError.value = ''
+})
 
 watch(() => props.mode, () => {
   password.value = ''
@@ -52,10 +63,7 @@ async function submitGate() {
     emit('retry')
     return
   }
-  if (isSetup.value && !passwordLongEnough.value) {
-    actionError.value = '空间口令至少需要 12 个字符。'
-    return
-  }
+  if (!canSubmitPassword.value) return
   if (isSetup.value && setupMode.value === 'connect' && !connectionCode.value.trim()) {
     actionError.value = '请输入已有空间的连接码。'
     return
@@ -148,20 +156,27 @@ function selectConnectionCode(event: FocusEvent) {
           <p v-if="setupMode === 'connect'" class="vault-help">仅可在新设备首次设置时连接。已有空间不会被覆盖。</p>
         </template>
 
+        <div v-if="isCreating" class="vault-mode-tabs" role="group" aria-label="新空间口令类型">
+          <button type="button" :class="{ selected: passwordMode === 'pin' }" :aria-pressed="passwordMode === 'pin'" @click="passwordMode = 'pin'">6 位数字</button>
+          <button type="button" :class="{ selected: passwordMode === 'passphrase' }" :aria-pressed="passwordMode === 'passphrase'" @click="passwordMode = 'passphrase'">复杂口令</button>
+        </div>
         <label class="vault-field">
           <span>空间口令</span>
           <input
             v-model="password"
             type="password"
-            :autocomplete="isSetup ? 'new-password' : 'current-password'"
-            :minlength="isSetup ? 12 : undefined"
+            :autocomplete="isCreating ? 'new-password' : 'current-password'"
+            :inputmode="isCreatingPin ? 'numeric' : 'text'"
+            :pattern="isCreatingPin ? '[0-9]{6}' : undefined"
+            autocapitalize="none"
+            :spellcheck="false"
             required
-            :placeholder="isSetup ? '至少 12 个字符' : '输入空间口令'"
+            :placeholder="isCreatingPin ? '设置 6 位数字，可用 0 开头' : isCreating ? '至少 12 个字符，可含文字、数字和符号' : '输入已有空间的口令'"
           />
         </label>
-        <p v-if="isSetup" class="vault-help">至少 12 个字符。旧笔记会迁移到加密空间；请保存好口令，服务端无法恢复遗忘的口令。</p>
+        <p v-if="isCreating" class="vault-help">请保存好口令，忘记后无法恢复笔记。需要更强保护时，建议使用复杂口令。</p>
         <p v-if="error || actionError" class="vault-error" role="alert">{{ actionError || error }}</p>
-        <button class="vault-primary-button" type="submit" :disabled="busy || vault.state.busy || (isSetup && !passwordLongEnough)">
+        <button class="vault-primary-button" type="submit" :disabled="busy || vault.state.busy || !canSubmitPassword">
           <span v-if="busy || vault.state.busy" class="vault-spinner"></span>
           {{ busy || vault.state.busy ? '正在处理…' : isSetup ? (setupMode === 'connect' ? '连接并解锁' : '创建并解锁') : '解锁空间' }}
         </button>

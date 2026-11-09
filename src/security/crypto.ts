@@ -83,8 +83,13 @@ export function decodeBase64(text: string): Uint8Array<ArrayBuffer> {
   return bytes
 }
 
+export function vaultPasswordKind(password: string): 'pin' | 'passphrase' | null {
+  if (/^[0-9]{6}$/.test(password)) return 'pin'
+  return Array.from(password).length >= 12 ? 'passphrase' : null
+}
+
 export async function createVault(password: string): Promise<{ header: VaultHeader; key: CryptoKey }> {
-  assertPassword(password)
+  if (!vaultPasswordKind(password)) throw new Error('请设置 6 位数字口令，或使用至少 12 个字符的复杂口令。')
 
   const idBytes = crypto.getRandomValues(new Uint8Array(16))
   const id = Array.from(idBytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
@@ -126,7 +131,6 @@ export async function createVault(password: string): Promise<{ header: VaultHead
 }
 
 export async function unlockVault(header: VaultHeader, password: string): Promise<CryptoKey> {
-  assertPassword(password)
   assertVaultHeader(header)
 
   const salt = decodeBase64(header.kdf.salt)
@@ -220,10 +224,6 @@ export async function decryptValue<T>(
   } finally {
     plaintextBytes.fill(0)
   }
-}
-
-function assertPassword(password: string): void {
-  if (Array.from(password).length < 12) throw new Error('口令至少需要12个字符')
 }
 
 async function deriveWrappingKey(password: string, salt: Uint8Array<ArrayBuffer>): Promise<CryptoKey> {

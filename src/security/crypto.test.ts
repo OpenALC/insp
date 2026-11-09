@@ -12,6 +12,17 @@ import {
 
 const PASSWORD = 'correct horse battery staple'
 
+test('a six-digit vault preserves leading zeros and rejects incomplete or mixed PINs', async () => {
+  const { header, key } = await createVault('012345')
+  const record = await encryptValue(key, header.id, 'note-1', { title: '数字口令' })
+  const reopened = await unlockVault(header, '012345')
+  assert.deepEqual(await decryptValue(reopened, header.id, 'note-1', record), { title: '数字口令' })
+  await assert.rejects(unlockVault(header, '12345'), /口令错误/)
+  for (const invalid of ['12345', '0123456', '12a345', ' 12345']) {
+    await assert.rejects(createVault(invalid), /6 位数字/)
+  }
+})
+
 test('vault values round-trip with fresh nonces and a non-exportable key', async () => {
   const { header, key } = await createVault(PASSWORD)
   const first = await encryptValue(key, header.id, 'record-1', { title: '秘密', count: 3 })
