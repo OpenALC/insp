@@ -15,7 +15,12 @@
 .mindmap-editor .mindmap-heading > span { font-size: 12px; }
 .mindmap-editor .mindmap-mode-switch { display: flex; flex: 0 0 auto; gap: 2px; padding: 3px; border-radius: 12px; background: var(--surface-soft); }
 .mindmap-editor .mindmap-mode-switch button { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border: 0; border-radius: 9px; background: transparent; font-size: 13px; cursor: pointer; }
-.mindmap-editor .mindmap-mode-switch button.active { color: var(--brand-strong); background: var(--brand-soft); font-weight: 600; }
+.mindmap-editor .mindmap-mode-switch { position: relative; display: grid; grid-template-columns: 1fr 1fr; }
+.mindmap-editor .mindmap-mode-switch::before { content: ''; position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 8px) / 2); border-radius: 9px; background: var(--brand-soft); transition: transform .21s cubic-bezier(.2,.8,.2,1); }
+.mindmap-editor .mindmap-mode-switch[data-view='tree']::before { transform: translateX(calc(100% + 2px)); }
+.mindmap-editor .mindmap-mode-switch button { position: relative; color: var(--ink); }
+.mindmap-editor .mindmap-mode-switch button.active { font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .mindmap-editor .mindmap-mode-switch::before { transition: none; } }
 
 .mindmap-editor .mindmap-outline-viewport,
 .mindmap-editor .mindmap-tree-viewport { flex: 1; min-height: 0; min-width: 0; overflow: auto; overscroll-behavior: contain; }
@@ -47,7 +52,8 @@
 .mindmap-editor .mindmap-outline-text:focus-visible { box-shadow: inset 0 -2px var(--brand-line); }
 .mindmap-editor .mindmap-outline-row-root .mindmap-outline-field { font-size: 22px; font-weight: 650; line-height: 1.5; }
 .mindmap-editor .mindmap-fold-count { flex: 0 0 auto; margin: 10px 5px 0 0; padding: 1px 6px; color: var(--brand-strong); border-radius: 6px; background: var(--brand-soft); font-size: 12px; line-height: 20px; }
-.mindmap-editor .mindmap-outline-hint { margin: 24px 0 0 41px; font-size: 12px; line-height: 1.7; }
+.mindmap-editor .mindmap-first-topic { display: flex; align-items: center; gap: 12px; min-height: 44px; margin-left: 12px; padding: 5px; border: 0; color: var(--ink); background: transparent; text-align: left; font-size: 14px; cursor: text; }
+.mindmap-editor .mindmap-first-topic::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--brand-line); }
 
 .mindmap-editor .mindmap-tree-navigation { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 10px; padding: 6px 0; }
 .mindmap-editor .mindmap-tree-navigation > span { font-size: 12px; }
@@ -69,24 +75,12 @@
 .mindmap-editor .mindmap-tree-text:focus-visible { box-shadow: inset 0 -2px var(--brand-line); }
 .mindmap-editor .mindmap-tree-fold { position: absolute; top: 50%; right: -19px; display: flex; min-width: 36px; min-height: 36px; align-items: center; justify-content: center; gap: 1px; padding: 0 3px; color: var(--brand-strong); border: 1px solid var(--brand-border); border-radius: 18px; background: var(--paper); font-size: 11px; cursor: pointer; transform: translateY(-50%); }
 
-.mindmap-editor .mindmap-context-tools { flex: 0 0 auto; max-height: 45%; overflow: auto; padding: 10px 0 4px; border-top: 1px solid var(--line); background: var(--paper); }
-.mindmap-editor .mindmap-current-topic { display: flex; min-width: 0; align-items: baseline; gap: 8px; padding: 0 5px 6px; font-size: 12px; }
-.mindmap-editor .mindmap-current-topic > span { flex: 0 0 auto; color: var(--brand-strong); }
-.mindmap-editor .mindmap-current-topic strong { overflow: hidden; font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.mindmap-editor .mindmap-primary-tools { display: flex; gap: 4px; }
-.mindmap-editor .mindmap-primary-tools button,
-.mindmap-editor .mindmap-more-tools button { display: inline-flex; min-width: 0; min-height: 40px; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border: 0; border-radius: 9px; background: transparent; font-size: 13px; cursor: pointer; }
-.mindmap-editor .mindmap-primary-tools .mindmap-insert-child { color: var(--brand-strong); background: var(--brand-soft); }
-.mindmap-editor .mindmap-primary-tools > button:last-child { margin-left: auto; }
-.mindmap-editor .mindmap-more-tools { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.mindmap-editor .mindmap-tree-viewport { display: flex; background: var(--paper); }
+.mindmap-editor .mindmap-tree-scaled { flex: none; margin: auto; }
+.mindmap-editor .mindmap-tree-add { position: absolute; left: 100%; top: 50%; transform: translateY(-50%); display: grid; width: 42px; height: 42px; place-items: center; color: var(--ink); border: 0; border-radius: 50%; background: var(--brand-soft); opacity: 0; pointer-events: none; }
+.mindmap-editor .mindmap-tree-node:focus-within .mindmap-tree-add { opacity: 1; pointer-events: auto; }
+.mindmap-editor .mindmap-tree-fold { top: auto; bottom: -14px; right: 5px; min-height: 26px; transform: none; }
 .mindmap-editor button:disabled { opacity: .4; cursor: not-allowed; }
-.mindmap-editor .mindmap-more-tools .mindmap-delete-topic:not(:disabled) { color: var(--danger); }
-@media (hover: hover) {
-  .mindmap-editor .mindmap-primary-tools button:hover:not(:disabled),
-  .mindmap-editor .mindmap-more-tools button:hover:not(:disabled),
-  .mindmap-editor .mindmap-zoom-controls button:hover:not(:disabled) { background: var(--brand-soft); }
-  .mindmap-editor .mindmap-more-tools .mindmap-delete-topic:hover:not(:disabled) { background: var(--danger-soft); }
-}
 
 @media (max-width: 760px) {
   .mindmap-editor .mindmap-header { min-height: 60px; gap: 8px; }
@@ -98,8 +92,5 @@
   .mindmap-editor .mindmap-outline-marker { flex-basis: 40px; width: 40px; height: 44px; }
   .mindmap-editor .mindmap-outline-text,
   .mindmap-editor .mindmap-outline-field::after { padding-top: 9px; padding-bottom: 9px; }
-  .mindmap-editor .mindmap-outline-hint { margin-left: 45px; }
   .mindmap-editor .mindmap-zoom-controls button { min-width: 40px; height: 40px; }
-  .mindmap-editor .mindmap-primary-tools button,
-  .mindmap-editor .mindmap-more-tools button { min-height: 44px; padding: 0 9px; }
 }

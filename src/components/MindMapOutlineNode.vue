@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { ChevronDown, ChevronRight } from 'lucide-vue-next'
 import type { MindMapNode } from '../domain/mindmap'
+import MindMapNodeField from './MindMapNodeField.vue'
 
 defineOptions({ name: 'MindMapOutlineNode' })
 
@@ -16,6 +17,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   edit: [id: string, text: string]
   select: [id: string]
+  command: [id: string, command: 'enter' | 'indent' | 'outdent']
   'toggle-collapse': [id: string]
 }>()
 
@@ -49,17 +51,17 @@ const collapsed = computed(() => props.collapsedIds.has(props.node.id))
       <span v-else class="mindmap-outline-marker" aria-hidden="true"></span>
 
       <div class="mindmap-outline-field" :data-text="node.text">
-        <textarea
+        <MindMapNodeField
           class="mindmap-outline-text"
-          :value="node.text"
+          :id="node.id"
+          :text="node.text"
+          :editable="editable"
+          :label="depth === 0 ? '中心主题内容' : `第 ${depth} 层分支内容`"
           rows="1"
-          :readonly="!editable"
-          :aria-label="depth === 0 ? '中心主题内容' : `第 ${depth} 层分支内容`"
-          :data-mindmap-node-id="node.id"
-          spellcheck="true"
-          @focus="emit('select', node.id)"
-          @input="emit('edit', node.id, ($event.target as HTMLTextAreaElement).value)"
-        ></textarea>
+          @select="emit('select', $event)"
+          @edit="(id, text) => emit('edit', id, text)"
+          @command="(id, command) => emit('command', id, command)"
+        />
       </div>
       <span v-if="collapsed && node.children.length" class="mindmap-fold-count" aria-hidden="true">{{ node.children.length }}</span>
     </div>
@@ -75,6 +77,7 @@ const collapsed = computed(() => props.collapsedIds.has(props.node.id))
         :collapsed-ids="collapsedIds"
         @edit="(id, text) => emit('edit', id, text)"
         @select="emit('select', $event)"
+        @command="(id, command) => emit('command', id, command)"
         @toggle-collapse="emit('toggle-collapse', $event)"
       />
     </ul>

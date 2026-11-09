@@ -37,8 +37,11 @@ class AppearanceArgs {
 
 @TauriPlugin
 class DevicePlugin(private val activity: Activity) : Plugin(activity) {
-    private val secrets = DeviceSecrets(activity)
-    private val storageExecutor = Executors.newSingleThreadExecutor()
+    private val secrets = DeviceSecrets(activity.applicationContext)
+    private companion object {
+        // Device secrets are shared by every activity in this process, including during recreation.
+        val storageExecutor = Executors.newSingleThreadExecutor()
+    }
     private var pendingAuthentication: Invoke? = null
     private var cancellation: CancellationSignal? = null
 
@@ -182,6 +185,5 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
         val signal = cancellation
         pendingAuthentication?.let { finishAuthentication(it, false) }
         signal?.cancel()
-        storageExecutor.shutdown()
     }
 }

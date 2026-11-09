@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, CornerDownRight, CornerUpLeft, ListTree, MoreHorizontal, Network, Plus, RotateCcw, Trash2, ZoomIn, ZoomOut } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, ListTree, Network, Plus, RotateCcw, ZoomIn, ZoomOut } from 'lucide-vue-next'
 import type { MindMapDocument, MindMapNode } from '../domain/mindmap'
 import { mindMapText } from '../domain/mindmap'
 import MindMapOutlineNode from './MindMapOutlineNode.vue'
+import MindMapNodeField from './MindMapNodeField.vue'
+import MindMapNodeTools from './MindMapNodeTools.vue'
+import { changeHierarchy } from '../domain/mindmap-structure'
 import '../mindmap.css'
 
 const props = defineProps<{
@@ -28,11 +31,11 @@ interface PositionedNode {
   centerY: number
 }
 
-const NODE_WIDTH = 184
-const NODE_HEIGHT = 88
-const HORIZONTAL_STEP = 244
-const VERTICAL_STEP = 112
-const CANVAS_MARGIN = 24
+const NODE_WIDTH = 160
+const NODE_HEIGHT = 68
+const HORIZONTAL_STEP = 228
+const VERTICAL_STEP = 104
+const CANVAS_MARGIN = 42
 
 function cloneNode(node: MindMapNode): MindMapNode {
   return { id: node.id, text: node.text, children: node.children.map(cloneNode) }
@@ -48,7 +51,8 @@ const collapsedIds = ref(new Set<string>())
 const zoom = ref(1)
 const editorElement = ref<HTMLElement>()
 const selectedId = ref(props.content.root.id)
-const moreActionsOpen = ref(false)
+const viewport = ref<HTMLElement>()
+const scrollPositions = { outline: [0, 0], tree: [0, 0] }
 let lastEmittedJson = ''
 
 watch(
@@ -88,13 +92,12 @@ const selected = computed(() => {
 })
 
 function selectNode(id: string) {
-  if (selectedId.value !== id) moreActionsOpen.value = false
   selectedId.value = id
 }
 
 async function revealSelection(focus = false) {
   await nextTick()
-  const field = editorElement.value?.querySelector<HTMLTextAreaElement>(`[data-mindmap-node-id="${CSS.escape(selectedId.value)}"]`)
+  const field = selectedField()
   if (focus) {
     field?.focus({ preventScroll: true })
     field?.select()
@@ -102,9 +105,51 @@ async function revealSelection(focus = false) {
   field?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 }
 
-function switchView(mode: ViewMode) {
+function selectedField() {
+  return editorElement.value?.querySelector<HTMLTextAreaElement>(`[data-mindmap-node-id="${CSS.escape(selectedId.value)}"]`)
+}
+
+function caret() {
+  const field = selectedField()
+  return field && document.activeElement === field ? [field.selectionStart, field.selectionEnd, field.selectionDirection] as const : null
+}
+
+function finishPendingInput() {
+  const field = selectedField()
+  if (!field || document.activeElement !== field || field.value === selected.value.node.text) return
+  // Give the IME a chance to finish before replacing this field with another one.
+  field.blur()
+  if (field.value !== selected.value.node.text) updateText(selectedId.value, field.value)
+}
+
+function animateLabel(target: HTMLElement, origin: DOMRect) {
+  const end = target.getBoundingClientRect()
+  const scale = viewMode.value === 'tree' ? zoom.value : 1
+  target.animate([{ transform: `translate(${(origin.left - end.left) / scale}px, ${(origin.top - end.top) / scale}px)` }, { transform: 'none' }], { duration: 210, easing: 'cubic-bezier(.2,.8,.2,1)' })
+}
+
+async function switchView(mode: ViewMode) {
+  if (viewMode.value === mode || !viewport.value) return
+  const field = selectedField()
+  const origin = field?.getBoundingClientRect()
+  const range = caret()
+  finishPendingInput()
+  scrollPositions[viewMode.value] = [viewport.value.scrollLeft, viewport.value.scrollTop]
   viewMode.value = mode
-  void revealSelection()
+  await nextTick()
+  if (!viewport.value || viewMode.value !== mode) return
+  viewport.value.scrollTo(scrollPositions[mode][0], scrollPositions[mode][1])
+  const target = selectedField()
+  if (!target) return
+  if (range) {
+    target.focus({ preventScroll: true })
+    target.setSelectionRange(...range)
+  }
+  target.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  if (!origin || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  // Translate the label, rather than scaling text or reflowing the graph during animation.
+  animateLabel(target, origin)
+  viewport.value.animate([{ opacity: .5 }, { opacity: 1 }], { duration: 170 })
 }
 
 function updateText(id: string, text: string) {
@@ -116,10 +161,11 @@ function updateText(id: string, text: string) {
 }
 
 function addChild(id: string) {
+  finishPendingInput()
   const next = cloneDocument(documentState.value)
   const target = findNode(next.root, id)
   if (!target) return
-  const child: MindMapNode = { id: crypto.randomUUID(), text: '新主题', children: [] }
+  const child: MindMapNode = { id: crypto.randomUUID(), text: '', children: [] }
   target.node.children.push(child)
   const nextCollapsed = new Set(collapsedIds.value)
   nextCollapsed.delete(id)
@@ -130,12 +176,13 @@ function addChild(id: string) {
 }
 
 function addSibling(id: string) {
+  finishPendingInput()
   const next = cloneDocument(documentState.value)
   const target = findNode(next.root, id)
   if (!target?.parent) return
   const index = target.parent.children.findIndex((child) => child.id === id)
   if (index < 0) return
-  const sibling: MindMapNode = { id: crypto.randomUUID(), text: '新主题', children: [] }
+  const sibling: MindMapNode = { id: crypto.randomUUID(), text: '', children: [] }
   target.parent.children.splice(index + 1, 0, sibling)
   publish(next)
   selectNode(sibling.id)
@@ -154,53 +201,42 @@ function deleteNode(id: string) {
   void revealSelection()
 }
 
-function moveSibling(id: string, direction: -1 | 1) {
-  const next = cloneDocument(documentState.value)
-  const target = findNode(next.root, id)
-  if (!target?.parent) return
-  const siblings = target.parent.children
-  const index = siblings.findIndex((child) => child.id === id)
-  const destination = index + direction
-  if (index < 0 || destination < 0 || destination >= siblings.length) return
-  const neighbor = siblings[destination]
-  siblings[destination] = target.node
-  siblings[index] = neighbor
+async function adjustHierarchy(id: string, action: 'up' | 'down' | 'indent' | 'outdent') {
+  const range = caret()
+  const origin = selectedField()?.getBoundingClientRect()
+  finishPendingInput()
+  const next = changeHierarchy(documentState.value, id, action)
+  if (next === documentState.value) return
+  const parent = findNode(next.root, id)?.parent
+  if (parent) {
+    const collapsed = new Set(collapsedIds.value)
+    collapsed.delete(parent.id)
+    collapsedIds.value = collapsed
+  }
   publish(next)
-  void revealSelection()
+  await revealSelection()
+  const field = selectedField()
+  if (range) {
+    field?.focus({ preventScroll: true })
+    field?.setSelectionRange(...range)
+  }
+  if (field && origin && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) animateLabel(field, origin)
 }
 
-function indentNode(id: string) {
-  const next = cloneDocument(documentState.value)
-  const target = findNode(next.root, id)
-  if (!target?.parent) return
-  const siblings = target.parent.children
-  const index = siblings.findIndex((child) => child.id === id)
-  if (index <= 0) return
-  const newParent = siblings[index - 1]
-  siblings.splice(index, 1)
-  newParent.children.push(target.node)
-  const nextCollapsed = new Set(collapsedIds.value)
-  nextCollapsed.delete(newParent.id)
-  collapsedIds.value = nextCollapsed
-  publish(next)
-  void revealSelection()
+function nodeCommand(id: string, action: 'enter' | 'indent' | 'outdent') {
+  if (!props.editable) return
+  selectNode(id)
+  if (action === 'enter') {
+    if (id === documentState.value.root.id) addChild(id)
+    else addSibling(id)
+  } else void adjustHierarchy(id, action)
 }
 
-function outdentNode(id: string) {
-  const next = cloneDocument(documentState.value)
-  const target = findNode(next.root, id)
-  if (!target?.parent) return
-  const parentLocation = findNode(next.root, target.parent.id)
-  const grandparent = parentLocation?.parent
-  if (!grandparent) return
-  const siblings = target.parent.children
-  const index = siblings.findIndex((child) => child.id === id)
-  const parentIndex = grandparent.children.findIndex((child) => child.id === target.parent?.id)
-  if (index < 0 || parentIndex < 0) return
-  siblings.splice(index, 1)
-  grandparent.children.splice(parentIndex + 1, 0, target.node)
-  publish(next)
-  void revealSelection()
+function toolAction(action: 'child' | 'sibling' | 'indent' | 'outdent' | 'up' | 'down' | 'delete') {
+  if (action === 'child') addChild(selectedId.value)
+  else if (action === 'sibling') addSibling(selectedId.value)
+  else if (action === 'delete') deleteNode(selectedId.value)
+  else void adjustHierarchy(selectedId.value, action)
 }
 
 function toggleCollapse(id: string) {
@@ -247,7 +283,7 @@ const treeLayout = computed(() => {
   }
 
   place(documentState.value.root, null, 0, 0, 1)
-  const height = Math.max(210, CANVAS_MARGIN * 2 + Math.max(1, leafIndex) * VERTICAL_STEP)
+  const height = CANVAS_MARGIN * 2 + (leafIndex - 1) * VERTICAL_STEP + NODE_HEIGHT
   const width = CANVAS_MARGIN * 2 + maxDepth * HORIZONTAL_STEP + NODE_WIDTH
   const byId = new Map(nodes.map((positioned) => [positioned.node.id, positioned]))
   const links = nodes.flatMap((child) => {
@@ -279,23 +315,19 @@ function adjustZoom(delta: number) {
   zoom.value = Math.min(1.6, Math.max(0.55, Math.round((zoom.value + delta) * 100) / 100))
 }
 
-function handleTreeText(id: string, event: Event) {
-  updateText(id, (event.target as HTMLTextAreaElement).value)
-}
-
 </script>
 
 <template>
   <section ref="editorElement" class="mindmap-editor" :data-editable="editable" aria-label="思维笔记编辑器">
     <header class="mindmap-header">
       <div class="mindmap-heading"><strong>思维笔记</strong><span>{{ nodeCount }} 个主题</span></div>
-      <div class="mindmap-mode-switch" role="group" aria-label="思维笔记视图">
-        <button type="button" :aria-pressed="viewMode === 'outline'" :class="{ active: viewMode === 'outline' }" @click="switchView('outline')"><ListTree :size="16" />列表</button>
-        <button type="button" :aria-pressed="viewMode === 'tree'" :class="{ active: viewMode === 'tree' }" @click="switchView('tree')"><Network :size="16" />思维树</button>
+      <div class="mindmap-mode-switch" :data-view="viewMode" role="group" aria-label="思维笔记视图">
+        <button type="button" :aria-pressed="viewMode === 'outline'" :class="{ active: viewMode === 'outline' }" @pointerdown.prevent @click="switchView('outline')"><ListTree :size="16" />列表</button>
+        <button type="button" :aria-pressed="viewMode === 'tree'" :class="{ active: viewMode === 'tree' }" @pointerdown.prevent @click="switchView('tree')"><Network :size="16" />思维树</button>
       </div>
     </header>
 
-    <div v-if="viewMode === 'outline'" class="mindmap-outline-viewport">
+    <div ref="viewport" v-if="viewMode === 'outline'" class="mindmap-outline-viewport">
       <ul class="mindmap-outline-tree" role="tree" aria-label="思维笔记主题列表">
         <MindMapOutlineNode
           :node="documentState.root"
@@ -305,10 +337,11 @@ function handleTreeText(id: string, event: Event) {
           :collapsed-ids="collapsedIds"
           @select="selectNode"
           @edit="updateText"
+          @command="nodeCommand"
           @toggle-collapse="toggleCollapse"
         />
       </ul>
-      <p class="mindmap-outline-hint">点按主题书写，在下方添加分支或调整层级。</p>
+      <button v-if="!documentState.root.children.length && editable" type="button" class="mindmap-first-topic" @click="addChild(documentState.root.id)">输入第一个分支，回车继续添加</button>
     </div>
 
     <template v-else>
@@ -320,7 +353,7 @@ function handleTreeText(id: string, event: Event) {
           <button type="button" :disabled="zoom >= 1.6" aria-label="放大" title="放大" @click="adjustZoom(0.15)"><ZoomIn :size="16" /></button>
         </div>
       </div>
-      <div class="mindmap-tree-viewport" role="region" aria-label="思维树画布，可上下左右滚动" tabindex="0">
+      <div ref="viewport" class="mindmap-tree-viewport" role="region" aria-label="思维树画布，可上下左右滚动" tabindex="0">
         <div class="mindmap-tree-scaled" :style="scaledCanvasStyle">
           <div class="mindmap-tree-canvas" :style="treeCanvasStyle">
             <svg class="mindmap-tree-links" :width="treeLayout.width" :height="treeLayout.height" aria-hidden="true">
@@ -336,17 +369,11 @@ function handleTreeText(id: string, event: Event) {
               :aria-label="entry.depth === 0 ? '中心主题' : `第 ${entry.depth} 层分支`"
               @click="selectNode(entry.node.id)"
             >
-              <textarea
-                class="mindmap-tree-text"
-                :value="entry.node.text"
-                rows="3"
-                :readonly="!editable"
-                :aria-label="entry.depth === 0 ? '中心主题内容' : `第 ${entry.depth} 层分支内容`"
-                :data-mindmap-node-id="entry.node.id"
-                spellcheck="true"
-                @focus="selectNode(entry.node.id)"
-                @input="handleTreeText(entry.node.id, $event)"
-              ></textarea>
+              <MindMapNodeField class="mindmap-tree-text" :id="entry.node.id" :text="entry.node.text" :editable="editable"
+                :label="entry.depth === 0 ? '中心主题内容' : `第 ${entry.depth} 层分支内容`" :rows="2"
+                @select="selectNode" @edit="updateText" @command="nodeCommand" />
+              <button v-if="editable && selectedId === entry.node.id" class="mindmap-tree-add" type="button"
+                aria-label="在当前主题旁添加子主题" @pointerdown.prevent @click.stop="addChild(entry.node.id)"><Plus :size="18" /></button>
               <button
                 v-if="entry.node.children.length"
                 class="mindmap-tree-fold"
@@ -365,20 +392,6 @@ function handleTreeText(id: string, event: Event) {
       </div>
     </template>
 
-    <div v-if="editable" class="mindmap-context-tools" role="group" :aria-label="`当前主题：${selected.node.text || '未命名主题'}`">
-      <div class="mindmap-current-topic"><span>{{ selected.parent ? '当前分支' : '中心主题' }}</span><strong>{{ selected.node.text || '未命名主题' }}</strong></div>
-      <div class="mindmap-primary-tools">
-        <button type="button" class="mindmap-insert-child" @pointerdown.prevent @click="addChild(selectedId)"><Plus :size="17" />子主题</button>
-        <button type="button" :disabled="!selected.parent" @pointerdown.prevent @click="addSibling(selectedId)"><Plus :size="17" />同级主题</button>
-        <button type="button" :aria-expanded="moreActionsOpen" aria-label="更多主题操作" @pointerdown.prevent @click="moreActionsOpen = !moreActionsOpen"><MoreHorizontal :size="20" /><span>更多</span></button>
-      </div>
-      <div v-if="moreActionsOpen" class="mindmap-more-tools" role="group" aria-label="调整当前主题">
-        <button type="button" :disabled="!selected.parent || selected.index === 0" @pointerdown.prevent @click="moveSibling(selectedId, -1)"><ArrowUp :size="16" />上移</button>
-        <button type="button" :disabled="!selected.parent || selected.index === selected.parent.children.length - 1" @pointerdown.prevent @click="moveSibling(selectedId, 1)"><ArrowDown :size="16" />下移</button>
-        <button type="button" :disabled="!selected.parent || selected.index === 0" @pointerdown.prevent @click="indentNode(selectedId)"><CornerDownRight :size="16" />增加缩进</button>
-        <button type="button" :disabled="!selected.canOutdent" @pointerdown.prevent @click="outdentNode(selectedId)"><CornerUpLeft :size="16" />减少缩进</button>
-        <button type="button" class="mindmap-delete-topic" :disabled="!selected.parent" title="删除主题及其子主题" @pointerdown.prevent @click="deleteNode(selectedId)"><Trash2 :size="16" />删除分支</button>
-      </div>
-    </div>
+    <MindMapNodeTools v-if="editable" :selected="selected" @action="toolAction" />
   </section>
 </template>
