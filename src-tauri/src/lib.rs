@@ -1,3 +1,4 @@
+mod device;
 mod models;
 mod storage;
 
@@ -172,11 +173,18 @@ pub fn run() {
         }
     }));
     builder
+        .plugin(device::init())
         .setup(|app| {
             app.manage(Arc::new(Storage::open(app.path().app_data_dir()?)?));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            device::device_secret_get,
+            device::device_secret_set,
+            device::device_auth_status,
+            device::device_authenticate,
+            device::device_insets,
+            device::device_set_appearance,
             load_workspace,
             get_note,
             create_note,

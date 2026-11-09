@@ -46,7 +46,10 @@ function legacyNote(
 }
 
 function createStore(legacy = emptyLegacy()) {
-  return { header: null as string | null, rows: new Map<string, string | null>(), legacy: structuredClone(legacy) }
+  return {
+    header: null as string | null, rows: new Map<string, string | null>(), legacy: structuredClone(legacy),
+    secrets: new Map<string, string>(), systemAuthAvailable: false, authenticate: async (): Promise<boolean> => false,
+  }
 }
 
 class MemorySyncServer {
@@ -145,6 +148,14 @@ function nativeInvoke(
   return async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
     let result: unknown
     switch (command) {
+      case 'device_secret_get': result = store.secrets.get((args as { id: string }).id) ?? null; break
+      case 'device_secret_set': {
+        const { id, value } = args as { id: string; value: string }
+        store.secrets.set(id, value)
+        break
+      }
+      case 'device_auth_status': result = store.systemAuthAvailable; break
+      case 'device_authenticate': result = await store.authenticate(); break
       case 'vault_header': result = store.header; break
       case 'vault_list': result = [...store.rows].map(([id, payload]) => ({ id, payload })); break
       case 'vault_get': result = store.rows.get((args as { id: string }).id) ?? null; break
@@ -594,4 +605,349 @@ test('blank-to-mindmap refuses text and attachment-only notes without changing t
     await assert.rejects(instance.platform.repository.convertToMindMap(blank.id), /只有空白笔记/)
     assert.deepEqual(await instance.platform.repository.getNote(blank.id), saved)
   }
+})
+
+test('openLocal stores a high entropy secret before creating the vault and reopens normal notes without a password', async () => {
+  const store = createStore()
+  store.systemAuthAvailable = true
+  const invoke = nativeInvoke(store)
+  const calls: string[] = []
+  const first = new EncryptedWorkspace(async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
+    calls.push(command)
+    if (command === 'vault_commit') assert.equal(store.secrets.size, 1)
+    return invoke<T>(command, args)
+  }, 'windows')
+  await first.initialize()
+  assert.deepEqual(calls, ['vault_header'])
+  await first.openLocal()
+  assert.equal(first.state.systemAuthAvailable, true)
+  assert.equal(first.state.privacyConfigured, false)
+  assert.equal(first.state.migrationRequired, false)
+  assert.equal(first.state.locked, false)
+  const secret = store.secrets.get(`insp.vault.${first.state.spaceId}`)!
+  assert.ok(secret.length >= 43)
+  const note = await first.platform.repository.createNote(null)
+  await editNote(first, note.id, 'Normal note', 'Local body')
+  assert.equal(JSON.stringify({ header: store.header, rows: [...store.rows] }).includes(secret), false)
+  await first.lock()
+
+  const restarted = workspace(store)
+  await restarted.initialize()
+  await restarted.openLocal()
+  assert.equal(restarted.state.locked, false)
+  assert.equal(restarted.state.privateVisible, false)
+  assert.equal(restarted.state.privacyConfigured, false)
+  assert.equal((await restarted.platform.repository.getNote(note.id)).title, 'Normal note')
+  await restarted.lock()
+})
+
+test('failure to store the device secret never creates a vault or purges legacy data', async () => {
+  const legacy = emptyLegacy()
+  legacy.notes = [legacyNote('keep-legacy', 'Keep legacy')]
+  const store = createStore(legacy)
+  const invoke = nativeInvoke(store)
+  let fail = true
+  const instance = new EncryptedWorkspace(async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
+    if (fail && command === 'device_secret_set') throw new Error('Secure storage unavailable')
+    return invoke<T>(command, args)
+  }, 'windows')
+  await instance.initialize()
+  await assert.rejects(instance.openLocal(), /Secure storage unavailable/)
+  assert.equal(store.header, null)
+  assert.equal(store.rows.size, 0)
+  assert.deepEqual(store.legacy, legacy)
+  assert.equal(instance.state.locked, true)
+  fail = false
+  await instance.openLocal()
+  assert.equal((await instance.platform.repository.getNote('keep-legacy')).title, 'Keep legacy')
+  await instance.lock()
+})
+
+test('legacy encrypted vaults require their original password once and preserve legacy private authentication after migration', async () => {
+  const legacy = emptyLegacy()
+  legacy.notes = [legacyNote('legacy-private', 'Keep private', { privacy: 'private' }), legacyNote('legacy-normal', 'Keep normal')]
+  const store = createStore(legacy)
+  const original = workspace(store)
+  await original.initialize()
+  await original.setup(PASSWORD)
+  await original.lock()
+  const originalHeader = store.header
+  const originalNote = store.rows.get('note:legacy-private')
+
+  const migrated = workspace(store)
+  await migrated.initialize()
+  await migrated.openLocal()
+  assert.equal(migrated.state.locked, true)
+  assert.equal(migrated.state.migrationRequired, true)
+  await assert.rejects(migrated.unlock('wrong original password'), /口令错误/)
+  assert.equal(store.secrets.size, 0)
+  await migrated.unlock(PASSWORD)
+  assert.equal(migrated.state.privacyConfigured, true)
+  await assert.rejects(migrated.setPrivacyPassword('123456'), /先认证隐私区/)
+  await assert.rejects(migrated.rememberLocalAccess('wrong original password'), /口令错误/)
+  assert.equal(store.secrets.size, 0)
+  await migrated.rememberLocalAccess(PASSWORD)
+  assert.equal(migrated.state.migrationRequired, false)
+  assert.equal(store.header, originalHeader)
+  assert.equal(store.rows.get('note:legacy-private'), originalNote)
+  await migrated.lock()
+
+  const restarted = workspace(store)
+  await restarted.initialize()
+  await restarted.openLocal()
+  assert.equal(restarted.state.migrationRequired, false)
+  assert.equal(restarted.state.locked, false)
+  assert.equal(restarted.state.privateVisible, false)
+  assert.equal((await restarted.platform.repository.getNote('legacy-normal')).title, 'Keep normal')
+  await assert.rejects(restarted.platform.repository.getNote('legacy-private'), /解锁隐私/)
+  await restarted.revealPrivate(PASSWORD)
+  assert.equal((await restarted.platform.repository.getNote('legacy-private')).title, 'Keep private')
+  await restarted.setPrivacyPassword('123456')
+  restarted.hidePrivate()
+  await assert.rejects(restarted.revealPrivate(PASSWORD), /口令错误/)
+  await restarted.revealPrivate('123456')
+  assert.equal(store.header, originalHeader)
+  assert.equal(store.rows.get('note:legacy-private'), originalNote)
+  await restarted.lock()
+})
+
+test('private PINs are independent from automatic local access and changes require private authentication', async () => {
+  const store = createStore()
+  const instance = workspace(store)
+  await instance.initialize()
+  await instance.openLocal()
+  const secret = store.secrets.get(`insp.vault.${instance.state.spaceId}`)!
+  const note = await instance.platform.repository.createNote(null)
+  await instance.setNotePolicy(note.id, 'private', 'localOnly')
+  const header = store.header
+  const encryptedNote = store.rows.get(`note:${note.id}`)
+  await assert.rejects(instance.revealPrivate(secret), /先设置隐私/)
+  await assert.rejects(instance.setPrivacyPassword('12345'), /6 位数字/)
+  assert.equal(instance.state.privacyConfigured, false)
+  await instance.setPrivacyPassword('135790')
+  assert.equal(instance.state.privacyConfigured, true)
+  assert.equal(instance.state.privateVisible, false)
+  await assert.rejects(instance.revealPrivate(secret), /口令错误/)
+  await instance.revealPrivate('135790')
+  assert.equal((await instance.platform.repository.getNote(note.id)).privacy, 'private')
+  instance.hidePrivate()
+  await assert.rejects(instance.setPrivacyPassword('246802'), /先认证隐私区/)
+  await instance.revealPrivate('135790')
+  const passphrase = 'independent privacy passphrase'
+  await instance.setPrivacyPassword(passphrase)
+  instance.hidePrivate()
+  await assert.rejects(instance.revealPrivate('135790'), /口令错误/)
+  await instance.revealPrivate(passphrase)
+  assert.equal(store.header, header)
+  assert.equal(store.rows.get(`note:${note.id}`), encryptedNote)
+  assert.deepEqual([...store.secrets.values()], [secret])
+  const persisted = JSON.stringify({ header: store.header, rows: [...store.rows] })
+  for (const credential of [secret, '135790', passphrase]) assert.equal(persisted.includes(credential), false)
+  await instance.lock()
+
+  const restarted = workspace(store)
+  await restarted.initialize()
+  await restarted.openLocal()
+  assert.equal(restarted.state.privacyConfigured, true)
+  assert.equal(restarted.state.privateVisible, false)
+  await assert.rejects(restarted.revealPrivate(secret), /口令错误/)
+  await restarted.revealPrivate(passphrase)
+  assert.equal((await restarted.platform.repository.getNote(note.id)).privacy, 'private')
+  await restarted.lock()
+})
+
+test('system authentication rejects failures, cancellation and late success after hiding or locking', async () => {
+  const store = createStore()
+  store.systemAuthAvailable = true
+  const instance = workspace(store)
+  await instance.initialize()
+  await instance.openLocal()
+  await assert.rejects(instance.revealPrivateWithSystem(), /未通过或已取消/)
+  assert.equal(instance.state.privateVisible, false)
+  store.authenticate = async () => { throw new Error('Authentication cancelled') }
+  await assert.rejects(instance.revealPrivateWithSystem(), /Authentication cancelled/)
+  assert.equal(instance.state.privateVisible, false)
+  store.authenticate = async () => 1 as unknown as boolean
+  await assert.rejects(instance.revealPrivateWithSystem(), /未通过或已取消/)
+  assert.equal(instance.state.privateVisible, false)
+
+  let finish!: (result: boolean) => void
+  store.authenticate = () => new Promise<boolean>(resolve => { finish = resolve })
+  const hidden = instance.revealPrivateWithSystem()
+  instance.hidePrivate()
+  finish(true)
+  await assert.rejects(hidden, /隐私区已锁定/)
+  assert.equal(instance.state.privateVisible, false)
+  assert.equal(instance.state.locked, false)
+
+  const locked = instance.revealPrivateWithSystem()
+  await instance.lock()
+  finish(true)
+  await assert.rejects(locked, /隐私区已锁定/)
+  assert.equal(instance.state.privateVisible, false)
+  assert.equal(instance.state.locked, true)
+
+  await instance.openLocal()
+  store.authenticate = async () => true
+  await instance.revealPrivateWithSystem()
+  assert.equal(instance.state.privateVisible, true)
+  instance.hidePrivate()
+  assert.equal(instance.state.privateVisible, false)
+  assert.equal(instance.state.locked, false)
+  await instance.lock()
+})
+
+test('hiding privacy invalidates a pending PIN verification and prevents private image access while normal notes remain open', async () => {
+  const legacy = emptyLegacy()
+  const note = legacyNote('private-image-note', 'Private image', { privacy: 'private' })
+  note.content = { type: 'doc', content: [{ type: 'image', attrs: { attachmentId: 'private-image' } }] }
+  legacy.notes = [note]
+  legacy.attachments = [{ id: 'private-image', mimeType: 'image/png', originalName: 'private.png', byteLength: 11, dataBase64: IMAGE_BASE64 }]
+  const store = createStore(legacy)
+  const instance = workspace(store)
+  await instance.initialize()
+  await instance.openLocal()
+  await instance.setPrivacyPassword('864209')
+  const pending = instance.revealPrivate('864209')
+  instance.hidePrivate()
+  await assert.rejects(pending, /隐私区已锁定/)
+  await assert.rejects(instance.platform.attachments.resolveImage('private-image'), /解锁隐私/)
+  await instance.revealPrivate('864209')
+  assert.match(await instance.platform.attachments.resolveImage('private-image'), /^blob:/)
+  instance.hidePrivate()
+  await assert.rejects(instance.platform.attachments.resolveImage('private-image'), /解锁隐私/)
+  assert.equal(instance.state.locked, false)
+  await instance.platform.repository.createNote(null)
+  await instance.lock()
+})
+
+test('insp2 pairing joins an empty automatic vault without a password and never sends the unlock secret to the server', async () => {
+  const server = new MemorySyncServer()
+  const sourceStore = createStore()
+  let secret = ''
+  const transport = (input: HttpInput) => {
+    assert.equal(JSON.stringify(input).includes(secret), false)
+    return server.handle(input)
+  }
+  const source = workspace(sourceStore, transport)
+  await source.initialize()
+  await source.openLocal()
+  secret = sourceStore.secrets.get(`insp.vault.${source.state.spaceId}`)!
+  await source.setPrivacyPassword('918273')
+  const note = await source.platform.repository.createNote(null)
+  await editNote(source, note.id, 'Paired normal note', 'Pairing body')
+  const privateNote = await source.platform.repository.createNote(null)
+  await source.setNotePolicy(privateNote.id, 'private', 'localOnly')
+  await source.configureSync(ENDPOINT)
+  assert.match(source.state.connectionCode, /^insp2\./)
+  assert.equal(server.latest(source.state.spaceId, `note:${privateNote.id}`), undefined)
+  assert.equal(server.mutations.some(mutation => mutation.entityId === '$meta'), false)
+
+  const targetStore = createStore()
+  const target = workspace(targetStore, transport)
+  await target.initialize()
+  await target.openLocal()
+  const previousSpace = target.state.spaceId
+  const previousSecret = targetStore.secrets.get(`insp.vault.${previousSpace}`)
+  await target.joinWorkspace(source.state.connectionCode)
+  assert.equal(target.state.spaceId, source.state.spaceId)
+  assert.equal(target.state.privacyConfigured, false)
+  assert.equal(target.state.privateVisible, false)
+  assert.equal((await target.platform.repository.getNote(note.id)).title, 'Paired normal note')
+  assert.equal(targetStore.secrets.get(`insp.vault.${previousSpace}`), previousSecret)
+  assert.equal(targetStore.secrets.get(`insp.vault.${source.state.spaceId}`), secret)
+  await target.setPrivacyPassword('192837')
+
+  await source.revealPrivate('918273')
+  await source.setNotePolicy(privateNote.id, 'private', 'sync')
+  source.hidePrivate()
+  await source.syncNow()
+  await target.syncNow()
+  await assert.rejects(target.platform.repository.getNote(privateNote.id), /解锁隐私/)
+  await assert.rejects(target.revealPrivate('918273'), /口令错误/)
+  await target.revealPrivate('192837')
+  assert.equal((await target.platform.repository.getNote(privateNote.id)).privacy, 'private')
+  target.hidePrivate()
+  await target.syncNow()
+  assert.equal(server.latest(source.state.spaceId, `note:${privateNote.id}`)?.operation, 'put')
+  await target.lock()
+
+  const restarted = workspace(targetStore, transport)
+  await restarted.initialize()
+  await restarted.openLocal()
+  assert.equal(restarted.state.locked, false)
+  assert.equal(restarted.state.privateVisible, false)
+  assert.equal((await restarted.platform.repository.getNote(note.id)).title, 'Paired normal note')
+  await restarted.lock()
+  await source.lock()
+})
+
+test('insp1 joins require the original password and preserve the empty vault on authentication failure', async () => {
+  const server = new MemorySyncServer()
+  const source = workspace(createStore(), server)
+  await source.initialize()
+  await source.setup(PASSWORD)
+  const note = await source.platform.repository.createNote(null)
+  await source.configureSync(ENDPOINT)
+  assert.match(source.state.connectionCode, /^insp1\./)
+  const store = createStore()
+  const target = workspace(store, server)
+  await target.initialize()
+  await target.openLocal()
+  const header = store.header
+  const rows = [...store.rows]
+  const secrets = [...store.secrets]
+  await assert.rejects(target.joinWorkspace(source.state.connectionCode), /需要原空间口令/)
+  await assert.rejects(target.joinWorkspace(source.state.connectionCode, 'wrong joining password'), /口令错误/)
+  assert.equal(store.header, header)
+  assert.deepEqual([...store.rows], rows)
+  assert.deepEqual([...store.secrets], secrets)
+  await target.joinWorkspace(source.state.connectionCode, PASSWORD)
+  assert.equal(target.state.privacyConfigured, true)
+  assert.equal((await target.platform.repository.getNote(note.id)).id, note.id)
+  await target.lock()
+  const restarted = workspace(store, server)
+  await restarted.initialize()
+  await restarted.openLocal()
+  assert.equal(restarted.state.migrationRequired, false)
+  assert.equal((await restarted.platform.repository.getNote(note.id)).id, note.id)
+  await restarted.lock()
+  await source.lock()
+})
+
+test('joinWorkspace rejects all nonempty local data including tombstones, groups and unattached images', async () => {
+  const group: NoteGroup = { id: 'keep-group', name: 'Keep group', parentId: null, createdAt: DELETED_AT, updatedAt: DELETED_AT }
+  const attachment: LegacyAttachment = { id: 'keep-image', mimeType: 'image/png', originalName: 'keep.png', byteLength: 11, dataBase64: IMAGE_BASE64 }
+  const fixtures: Legacy[] = [
+    { ...emptyLegacy(), notes: [legacyNote('keep-note', 'Keep note')] },
+    { ...emptyLegacy(), notes: [legacyNote('keep-deleted', 'Keep deleted', { deletedAt: DELETED_AT })] },
+    { ...emptyLegacy(), groups: [group] },
+    { ...emptyLegacy(), attachments: [attachment] },
+  ]
+  for (const legacy of fixtures) {
+    const store = createStore(legacy)
+    const target = workspace(store)
+    await target.initialize()
+    await assert.rejects(target.joinWorkspace('unused'), /完全空白/)
+    assert.deepEqual(store.legacy, legacy)
+    await target.openLocal()
+    const header = store.header
+    const rows = [...store.rows]
+    const secrets = [...store.secrets]
+    await assert.rejects(target.joinWorkspace('unused'), /完全空白/)
+    assert.equal(store.header, header)
+    assert.deepEqual([...store.rows], rows)
+    assert.deepEqual([...store.secrets], secrets)
+    await target.lock()
+  }
+
+  const store = createStore()
+  const target = workspace(store)
+  await target.initialize()
+  await target.openLocal()
+  const removed = await target.platform.repository.createGroup('Removed group')
+  await target.platform.repository.deleteGroup(removed.id)
+  assert.equal([...store.rows.keys()].some(id => id !== '$meta'), false)
+  await assert.rejects(target.joinWorkspace('unused'), /完全空白/)
+  await target.lock()
 })

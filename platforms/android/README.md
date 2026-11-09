@@ -27,7 +27,7 @@ The generated Android project is in `src-tauri/gen/android`. The project pins co
 - `visibilitychange`, `pagehide`, and Tauri's Android suspended event flush the pending note and image saves before the app backgrounds.
 - Image selection uses Android's system document/media picker without broad storage permissions. Imported images become app-private attachments.
 - The `tauri.android.conf.json` platform configuration sets Android's minimum SDK and is merged with the shared `tauri.conf.json` by the Tauri CLI.
-- The shared vault requires its password after process restart. Private notes are hidden from ordinary lists and search, and require password confirmation to reveal. New private notes default to local-only storage; syncing one requires an explicit change to its sync policy.
+- Ordinary notes reopen automatically using the Keystore-protected local credential. Legacy encrypted vaults require the original password once to migrate device access. Private notes are hidden from ordinary lists and search, and require system authentication or an independent privacy password to reveal. New private notes default to local-only storage; syncing one requires an explicit change to its sync policy.
 - Native HTTP carries encrypted sync records to the Linux service. Production endpoints use HTTPS; local development endpoints can use HTTP. Android emulators can use `adb reverse tcp:8787 tcp:8787` to reach a host service bound to loopback.
 
 For an ARM64 phone, install the `aarch64-linux-android` Rust target and build with `npm run tauri -- android build --debug --apk --target aarch64`. On Windows use the corresponding `aarch64-linux-android24` NDK compiler wrappers. The Gradle ABI directory is `arm64-v8a` and the debug assemble task is `:app:assembleArm64Debug`.

@@ -18,3 +18,11 @@ export function registerCloseGuard(save: () => Promise<void>, onError: (error: u
     ? registerHarmonyCloseGuard(harmonyHost, save, onError)
     : registerTauriCloseGuard(save, onError)
 }
+
+export function getDeviceInsets() {
+  return nativeInvoke<{ top: number; bottom: number; left: number; right: number }>('device_insets')
+}
+
+export function setDeviceAppearance(dark: boolean) {
+  return nativeInvoke<void>('device_set_appearance', { dark })
+}

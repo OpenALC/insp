@@ -1,6 +1,7 @@
 import { webview } from '@kit.ArkWeb';
 import { http } from '@kit.NetworkKit';
 import { NotesRepository, NoteKind, NoteWrite, VaultCommitInput } from '../data/NotesRepository';
+import { DeviceSecurity } from './DeviceSecurity';
 
 interface BridgeRequest {
   id: string;
@@ -15,6 +16,22 @@ interface CreateNoteArgs {
 
 interface IdArgs {
   id: string;
+}
+
+interface SecretSetArgs {
+  id: string;
+  value: string;
+}
+
+interface AppearanceArgs {
+  dark: boolean;
+}
+
+export interface DeviceInsets {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
 }
 
 interface NameArgs {
@@ -64,11 +81,19 @@ export interface BridgeResponse {
 export class HarmonyNativeHost {
   private readonly repository: NotesRepository;
   private readonly controller: webview.WebviewController;
+  private readonly security: DeviceSecurity;
   private vaultQueue: Promise<void> = Promise.resolve();
+  private disposed: boolean = false;
 
-  constructor(repository: NotesRepository, controller: webview.WebviewController) {
+  constructor(repository: NotesRepository, controller: webview.WebviewController, security: DeviceSecurity) {
     this.repository = repository;
     this.controller = controller;
+    this.security = security;
+  }
+
+  close(): void {
+    this.disposed = true;
+    this.security.close();
   }
 
   private enqueueVault<T>(action: () => Promise<T>): Promise<T> {
@@ -93,6 +118,26 @@ export class HarmonyNativeHost {
   private async dispatch(request: BridgeRequest): Promise<string> {
     let result: Object | null = null;
     switch (request.command) {
+      case 'device_secret_get':
+        result = await this.security.getSecret((request.args as IdArgs).id);
+        break;
+      case 'device_secret_set': {
+        const args = request.args as SecretSetArgs;
+        await this.security.setSecret(args.id, args.value);
+        break;
+      }
+      case 'device_auth_status':
+        result = this.security.authStatus();
+        break;
+      case 'device_authenticate':
+        result = await this.security.authenticate();
+        break;
+      case 'device_insets':
+        result = HarmonyHostRuntime.getInsets();
+        break;
+      case 'device_set_appearance':
+        await HarmonyHostRuntime.setAppearance((request.args as AppearanceArgs).dark);
+        break;
       case 'load_workspace':
         result = await this.repository.loadWorkspace();
         break;
@@ -256,6 +301,9 @@ export class HarmonyNativeHost {
   }
 
   private respond(response: BridgeResponse): void {
+    if (this.disposed) {
+      return;
+    }
     this.controller.runJavaScript(
       'window.__inspBridgeResponse(' + JSON.stringify(JSON.stringify(response)) + ')'
     );
@@ -264,10 +312,67 @@ export class HarmonyNativeHost {
 
 export class HarmonyHostRuntime {
   private static controller: webview.WebviewController | null = null;
+  private static host: HarmonyNativeHost | null = null;
+  private static pageReady: boolean = false;
+  private static insets: DeviceInsets = { top: 0, bottom: 0, left: 0, right: 0 };
   private static exitHandler: (() => void) | null = null;
+  private static appearanceHandler: ((dark: boolean) => Promise<void>) | null = null;
 
-  static attach(controller: webview.WebviewController): void {
+  static setAppearanceHandler(handler: ((dark: boolean) => Promise<void>) | null): void {
+    HarmonyHostRuntime.appearanceHandler = handler;
+  }
+
+  static async setAppearance(dark: boolean): Promise<void> {
+    const handler = HarmonyHostRuntime.appearanceHandler;
+    if (handler === null) {
+      throw new Error('当前窗口不可用。');
+    }
+    await handler(dark);
+  }
+
+  static attach(controller: webview.WebviewController, host: HarmonyNativeHost): void {
     HarmonyHostRuntime.controller = controller;
+    HarmonyHostRuntime.host = host;
+    HarmonyHostRuntime.pageReady = false;
+  }
+
+  static detach(controller?: webview.WebviewController): void {
+    if (controller !== undefined && controller !== HarmonyHostRuntime.controller) {
+      return;
+    }
+    HarmonyHostRuntime.controller = null;
+    HarmonyHostRuntime.pageReady = false;
+    const host = HarmonyHostRuntime.host;
+    HarmonyHostRuntime.host = null;
+    if (host !== null) {
+      host.close();
+    }
+  }
+
+  static getInsets(): DeviceInsets {
+    return HarmonyHostRuntime.insets;
+  }
+
+  static setInsets(insets: DeviceInsets): void {
+    HarmonyHostRuntime.insets = insets;
+    HarmonyHostRuntime.publishInsets();
+  }
+
+  static markPageReady(): void {
+    HarmonyHostRuntime.pageReady = true;
+    HarmonyHostRuntime.publishInsets();
+  }
+
+  private static publishInsets(): void {
+    if (HarmonyHostRuntime.controller !== null && HarmonyHostRuntime.pageReady) {
+      HarmonyHostRuntime.controller.runJavaScript(
+        "window.dispatchEvent(new CustomEvent('insp:insets', { detail: " + JSON.stringify(HarmonyHostRuntime.insets) + ' }))'
+      );
+    }
+  }
+
+  static clearExitHandler(): void {
+    HarmonyHostRuntime.exitHandler = null;
   }
 
   static setExitHandler(exitHandler: () => void): void {

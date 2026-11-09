@@ -22,6 +22,8 @@ interface Metadata {
   receipts: Record<string, Receipt>
   pending: Record<string, Pending>
   deleteIntents: Record<string, DeleteIntent>
+  privacyCredential?: VaultHeader | null
+  unlockSecret?: string
 }
 interface Legacy {
   groups: NoteGroup[]
@@ -29,7 +31,9 @@ interface Legacy {
   attachments: StoredImage[]
   dataDirectory: string
 }
-interface ConnectionCode { version: 1; endpoint: string; spaceId: string; token: string }
+type ConnectionCode = { endpoint: string; spaceId: string; token: string } & (
+  { version: 1 } | { version: 2; unlockSecret: string }
+)
 type CommitOptions = {
   remote?: boolean
   edit?: (meta: Metadata) => void
@@ -44,6 +48,7 @@ const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 const timestamp = () => new Date().toISOString()
 const message = (error: unknown) => error instanceof Error ? error.message : String(error)
 const emptyMeta = (): Metadata => ({ dataDirectory: '', config: null, cursor: 0, versions: {}, receipts: {}, pending: {}, deleteIntents: {} })
+const secretId = (spaceId: string) => `insp.vault.${spaceId}`
 
 const eligibleForSync = (note: StoredNote) => !note.deletedAt && note.syncPolicy === 'sync'
 
@@ -60,14 +65,17 @@ export function normalizeEndpoint(input: string): string {
 }
 
 function connectionString(config: ConnectionCode): string {
-  return 'insp1.' + encodeBase64(new TextEncoder().encode(JSON.stringify(config))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  return `insp${config.version}.` + encodeBase64(new TextEncoder().encode(JSON.stringify(config))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
 function parseConnection(code: string): ConnectionCode {
-  if (!code.trim().startsWith('insp1.')) throw new Error('连接码格式不正确。')
+  const prefix = code.trim().slice(0, 6)
+  if (prefix !== 'insp1.' && prefix !== 'insp2.') throw new Error('连接码格式不正确。')
   const encoded = code.trim().slice(6).replace(/-/g, '+').replace(/_/g, '/')
   const result = JSON.parse(new TextDecoder().decode(decodeBase64(encoded.padEnd(Math.ceil(encoded.length / 4) * 4, '=')))) as ConnectionCode
-  if (result.version !== 1 || !result.spaceId || result.token.length < 32) throw new Error('连接码格式不正确。')
+  if ((result.version !== 1 && result.version !== 2) || prefix !== `insp${result.version}.` ||
+      !result.spaceId || typeof result.token !== 'string' || result.token.length < 32 ||
+      (result.version === 2 && (typeof result.unlockSecret !== 'string' || !result.unlockSecret))) throw new Error('连接码格式不正确。')
   result.endpoint = normalizeEndpoint(result.endpoint)
   return result
 }
@@ -93,7 +101,7 @@ function imageType(bytes: Uint8Array): string {
 }
 
 export class EncryptedWorkspace implements VaultController {
-  readonly state: VaultState = reactive({ ready: false, initialized: false, locked: true, privateVisible: false, busy: false, syncing: false, endpoint: '', spaceId: '', connectionCode: '', lastSync: '', syncError: '' })
+  readonly state: VaultState = reactive({ ready: false, initialized: false, locked: true, privateVisible: false, privacyConfigured: false, systemAuthAvailable: false, migrationRequired: false, busy: false, syncing: false, endpoint: '', spaceId: '', connectionCode: '', lastSync: '', syncError: '' })
   readonly platform: PlatformAdapter
   private header: VaultHeader | null = null
   private key: CryptoKey | null = null
@@ -106,6 +114,7 @@ export class EncryptedWorkspace implements VaultController {
   private syncTimer: ReturnType<typeof setTimeout> | undefined
   private syncAgain = false
   private epoch = 0
+  private privacyEpoch = 0
   private beforeApply: () => Promise<void> = async () => {}
   private afterApply: () => Promise<void> = async () => {}
   private invoke: NativeInvoke
@@ -193,11 +202,13 @@ export class EncryptedWorkspace implements VaultController {
         resolveImage: async id => {
           await this.queue
           this.requireKey()
+          this.requireImageAccess(id)
           const epoch = this.epoch
           const previous = this.urls.get(id)
           if (previous) return previous
           const entity = await this.readEntity('attachment:' + id)
           if (epoch !== this.epoch || this.state.locked) throw new Error('加密空间已锁定。')
+          this.requireImageAccess(id)
           if (entity.type !== 'attachment') throw new Error('图片附件不存在。')
           const url = URL.createObjectURL(new Blob([decodeBase64(entity.value.dataBase64)], { type: entity.value.mimeType }))
           this.urls.set(id, url)
@@ -220,6 +231,30 @@ export class EncryptedWorkspace implements VaultController {
     this.state.ready = true
   }
 
+  async openLocal(): Promise<void> {
+    this.state.systemAuthAvailable = await this.invoke<boolean>('device_auth_status') === true
+    if (!this.state.locked) return
+    if (!this.header) {
+      const secret = encodeBase64(crypto.getRandomValues(new Uint8Array(32)))
+      await this.setupWorkspace(secret, undefined, true)
+      return
+    }
+    const secret = await this.invoke<string | null>('device_secret_get', { id: secretId(this.header.id) })
+    this.state.migrationRequired = secret === null
+    if (secret !== null) await this.unlock(secret)
+  }
+
+  rememberLocalAccess(password: string): Promise<void> {
+    return this.write(async () => {
+      const epoch = this.epoch
+      await unlockVault(this.header!, password)
+      if (epoch !== this.epoch) throw new Error('加密空间已锁定。')
+      await this.invoke<void>('device_secret_set', { id: secretId(this.header!.id), value: password })
+      await this.persist([], [], { remote: true, edit: meta => { meta.unlockSecret = password } })
+      this.state.migrationRequired = false
+    })
+  }
+
   private requireKey(): CryptoKey {
     if (!this.key || this.state.locked) throw new Error('请先解锁加密空间。')
     return this.key
@@ -239,6 +274,13 @@ export class EncryptedWorkspace implements VaultController {
     if (entity?.type !== 'note' || entity.value.deletedAt) throw new Error('笔记不存在或已删除。')
     if (entity.value.privacy === 'private' && !this.state.privateVisible) throw new Error('请先解锁隐私笔记。')
     return entity.value
+  }
+
+  private requireImageAccess(id: string): void {
+    const references = this.notes().filter(note => imageIds(note.content).has('attachment:' + id))
+    if (!this.state.privateVisible && references.length && references.every(note => note.privacy === 'private' || note.deletedAt)) {
+      throw new Error('请先解锁隐私笔记。')
+    }
   }
 
   private async readEntity(id: string): Promise<Entity> {
@@ -293,10 +335,65 @@ export class EncryptedWorkspace implements VaultController {
   private updateState() {
     this.state.endpoint = this.meta.config?.endpoint ?? ''
     this.state.spaceId = this.header?.id ?? ''
-    this.state.connectionCode = this.meta.config ? connectionString({ version: 1, ...this.meta.config, spaceId: this.header!.id }) : ''
+    this.state.privacyConfigured = this.meta.privacyCredential !== null
+    this.state.connectionCode = this.meta.config ? connectionString({ ...this.meta.config, spaceId: this.header!.id,
+      ...(this.meta.unlockSecret ? { version: 2, unlockSecret: this.meta.unlockSecret } as const : { version: 1 } as const),
+    }) : ''
   }
 
   async setup(password: string, connectionCode?: string): Promise<void> {
+    await this.setupWorkspace(password, connectionCode)
+  }
+
+  joinWorkspace(code: string, password?: string): Promise<void> {
+    const operation = this.queue.then(async () => {
+      if (this.state.initialized) this.requireKey()
+      const rows = await this.invoke<Row[]>('vault_list')
+      const legacy = await this.invoke<Legacy>('vault_legacy_export')
+      if (rows.some(row => row.id !== '$meta') || (!this.state.initialized && rows.length) ||
+          this.entities.size || legacy.notes.length || legacy.groups.length || legacy.attachments.length ||
+          [this.meta.versions, this.meta.receipts, this.meta.pending, this.meta.deleteIntents].some(history => Object.keys(history).length)) {
+        throw new Error('仅能在完全空白的本地空间连接已有空间；请先保留现有笔记、回收站、分组和附件。')
+      }
+      const epoch = this.epoch
+      const connection = parseConnection(code)
+      const secret = connection.version === 2 ? connection.unlockSecret : password
+      if (!secret) throw new Error('此旧版连接码需要原空间口令。')
+      this.state.busy = true
+      try {
+        const { header } = await this.request<{ header: VaultHeader }>(connection, 'GET', '')
+        if (header.id !== connection.spaceId) throw new Error('同步空间标识不匹配。')
+        const key = await unlockVault(header, secret)
+        if (epoch !== this.epoch) throw new Error('加密空间已锁定。')
+        const meta: Metadata = {
+          ...emptyMeta(), dataDirectory: this.state.initialized ? this.meta.dataDirectory : legacy.dataDirectory,
+          config: { endpoint: connection.endpoint, token: connection.token }, unlockSecret: secret,
+          ...(connection.version === 2 ? { privacyCredential: null } : {}),
+        }
+        const payload = JSON.stringify(await encryptValue(key, header.id, '$meta', meta))
+        // Store the new space's secret first; a failed commit leaves the old space and its secret intact.
+        await this.invoke<void>('device_secret_set', { id: secretId(header.id), value: secret })
+        await this.invoke<void>('vault_commit', { input: {
+          header: JSON.stringify(header), puts: [{ id: '$meta', payload }], deletes: [], purgeLegacy: true,
+        } })
+        this.clearMemory()
+        this.header = header
+        this.key = key
+        this.meta = meta
+        this.rows.set('$meta', payload)
+        this.state.initialized = true
+        this.state.locked = false
+        this.state.migrationRequired = false
+        this.state.lastSync = ''
+        this.state.syncError = ''
+        this.updateState()
+      } finally { this.state.busy = false }
+    })
+    this.queue = operation.then(() => undefined, () => undefined)
+    return operation.then(() => this.syncNow())
+  }
+
+  private async setupWorkspace(password: string, connectionCode?: string, remember = false): Promise<void> {
     if (this.state.initialized) throw new Error('本机已有加密空间，请使用原口令解锁。')
     this.state.busy = true
     try {
@@ -306,6 +403,7 @@ export class EncryptedWorkspace implements VaultController {
         const response = await this.request<{ header: VaultHeader }>(connection, 'GET', '')
         if (response.header.id !== connection.spaceId) throw new Error('同步空间标识不匹配。')
         this.header = response.header
+        if (connection.version === 2) password = connection.unlockSecret
         this.key = await unlockVault(this.header, password)
         config = { endpoint: connection.endpoint, token: connection.token }
       } else {
@@ -315,6 +413,11 @@ export class EncryptedWorkspace implements VaultController {
       }
       const legacy = await this.invoke<Legacy>('vault_legacy_export')
       this.meta = { ...emptyMeta(), config, dataDirectory: legacy.dataDirectory }
+      if (remember) {
+        await this.invoke<void>('device_secret_set', { id: secretId(this.header!.id), value: password })
+        this.meta.privacyCredential = null
+        this.meta.unlockSecret = password
+      }
       this.state.locked = false
       const entities: Entity[] = [
         ...legacy.groups.map(value => ({ type: 'group' as const, value })),
@@ -323,6 +426,7 @@ export class EncryptedWorkspace implements VaultController {
       ]
       await this.persist(entities, [], { header: JSON.stringify(this.header), purgeLegacy: true, remote: true })
       this.state.initialized = true
+      this.state.migrationRequired = false
     } catch (error) {
       this.clearMemory()
       await this.initialize()
@@ -332,6 +436,7 @@ export class EncryptedWorkspace implements VaultController {
   }
 
   async unlock(password: string): Promise<void> {
+    const epoch = this.epoch
     this.state.busy = true
     try {
       const key = await unlockVault(this.header!, password)
@@ -347,6 +452,7 @@ export class EncryptedWorkspace implements VaultController {
         if (entityId(entity) !== row.id) throw new Error('加密记录标识不匹配。')
         entities.set(row.id, entity)
       }
+      if (epoch !== this.epoch) throw new Error('加密空间已锁定。')
       this.key = key
       this.meta = meta
       this.entities = entities
@@ -360,6 +466,7 @@ export class EncryptedWorkspace implements VaultController {
 
   private clearMemory() {
     this.epoch++
+    this.privacyEpoch++
     if (this.syncTimer) clearTimeout(this.syncTimer)
     this.key = null
     this.meta = emptyMeta()
@@ -380,11 +487,36 @@ export class EncryptedWorkspace implements VaultController {
   async revealPrivate(password: string): Promise<void> {
     this.requireKey()
     const epoch = this.epoch
-    await unlockVault(this.header!, password)
-    if (epoch !== this.epoch) throw new Error('加密空间已锁定。')
+    const privacyEpoch = this.privacyEpoch
+    const credential = this.meta.privacyCredential
+    if (credential === null) throw new Error('请先设置隐私 PIN 或复杂口令，或使用系统认证。')
+    await unlockVault(credential ?? this.header!, password)
+    if (epoch !== this.epoch || privacyEpoch !== this.privacyEpoch) throw new Error('隐私区已锁定，请重新认证。')
     this.state.privateVisible = true
   }
+
+  async revealPrivateWithSystem(): Promise<void> {
+    this.requireKey()
+    const epoch = this.epoch
+    const privacyEpoch = this.privacyEpoch
+    const authenticated = await this.invoke<boolean>('device_authenticate')
+    if (epoch !== this.epoch || privacyEpoch !== this.privacyEpoch) throw new Error('隐私区已锁定，请重新认证。')
+    if (authenticated !== true) throw new Error('系统认证未通过或已取消。')
+    this.state.privateVisible = true
+  }
+
+  setPrivacyPassword(password: string): Promise<void> {
+    return this.write(async () => {
+      if (this.meta.privacyCredential !== null && !this.state.privateVisible) throw new Error('请先认证隐私区，再修改隐私口令。')
+      const privacyEpoch = this.privacyEpoch
+      const { header } = await createVault(password)
+      if (privacyEpoch !== this.privacyEpoch) throw new Error('隐私区已锁定，请重新认证。')
+      await this.persist([], [], { remote: true, edit: meta => { meta.privacyCredential = header } })
+    })
+  }
+
   hidePrivate(): void {
+    this.privacyEpoch++
     this.state.privateVisible = false
     const publicImages = new Set(this.notes().filter(n => !n.deletedAt && n.privacy === 'normal').flatMap(n => [...imageIds(n.content)]))
     for (const note of this.notes().filter(n => n.privacy === 'private')) {

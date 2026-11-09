@@ -14,6 +14,7 @@ function applyTheme() {
     : themePreference.value
   document.documentElement.dataset.theme = theme
   document.documentElement.style.colorScheme = theme
+  window.dispatchEvent(new CustomEvent('insp:theme', { detail: { dark: theme === 'dark' } }))
 }
 
 export function setThemePreference(value: ThemePreference) {

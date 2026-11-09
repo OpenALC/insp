@@ -2,6 +2,7 @@ import { webview } from '@kit.ArkWeb';
 import { common } from '@kit.AbilityKit';
 import { NotesRepository } from '../data/NotesRepository';
 import { HarmonyHostRuntime, HarmonyNativeHost } from '../platform/HarmonyNativeHost';
+import { DeviceSecurity } from '../platform/DeviceSecurity';
 
 @Entry
 @Component
@@ -9,26 +10,44 @@ struct Index {
   private controller: webview.WebviewController = new webview.WebviewController('insp-notes-web');
   private repository: NotesRepository | null = null;
   private nativeHost: HarmonyNativeHost | null = null;
+  private security: DeviceSecurity | null = null;
+  private active: boolean = false;
   private blankLoaded: boolean = false;
   private proxyRegistered: boolean = false;
 
   aboutToAppear(): void {
+    this.active = true;
     const context = getContext(this) as common.UIAbilityContext;
     this.openRepository(context);
   }
 
   private async openRepository(context: common.UIAbilityContext): Promise<void> {
-    this.repository = await NotesRepository.open(context);
+    const repository = await NotesRepository.open(context);
+    const security = await DeviceSecurity.open(context);
+    if (!this.active) {
+      security.close();
+      return;
+    }
+    this.repository = repository;
+    this.security = security;
     this.tryLoadWebApp();
   }
 
+  aboutToDisappear(): void {
+    this.active = false;
+    HarmonyHostRuntime.detach(this.controller);
+    if (this.security !== null) {
+      this.security.close();
+    }
+  }
+
   private tryLoadWebApp(): void {
-    if (!this.blankLoaded || this.repository === null || this.proxyRegistered) {
+    if (!this.active || !this.blankLoaded || this.repository === null || this.security === null || this.proxyRegistered) {
       return;
     }
-    this.nativeHost = new HarmonyNativeHost(this.repository, this.controller);
+    this.nativeHost = new HarmonyNativeHost(this.repository, this.controller, this.security);
     this.controller.registerJavaScriptProxy(this.nativeHost, 'inspNative', ['postMessage']);
-    HarmonyHostRuntime.attach(this.controller);
+    HarmonyHostRuntime.attach(this.controller, this.nativeHost);
     this.proxyRegistered = true;
     this.controller.loadUrl('https://insp.local/index.html');
   }
@@ -116,11 +135,18 @@ struct Index {
             this.tryLoadWebApp();
           }
         })
+        .onPageEnd((event) => {
+          if (event.url === 'https://insp.local/index.html') {
+            HarmonyHostRuntime.markPageReady();
+          }
+        })
         .onShowFileSelector(() => false)
         .onInterceptRequest((event) => this.interceptRequest(event.request.getRequestUrl()))
     }
     .width('100%')
     .height('100%')
     .backgroundColor('#F7F6F3')
+    .expandSafeArea([SafeAreaType.SYSTEM, SafeAreaType.CUTOUT], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM,
+      SafeAreaEdge.START, SafeAreaEdge.END])
   }
 }

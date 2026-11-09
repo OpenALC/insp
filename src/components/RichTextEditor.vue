@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Mark, type JSONContent } from '@tiptap/core'
 import { EditorContent, useEditor } from '@tiptap/vue-3'
 import { TextSelection, type SelectionBookmark } from '@tiptap/pm/state'
@@ -32,6 +32,7 @@ const props = defineProps<{
   content: JSONContent
   editable: boolean
   reading?: boolean
+  autofocus?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -103,6 +104,9 @@ const editor = useEditor({
       startImport(images, bookmark)
       return true
     },
+  },
+  onCreate({ editor: currentEditor }) {
+    if (props.autofocus) currentEditor.commands.focus('end')
   },
   onUpdate({ editor: currentEditor }) {
     emit('update:document', currentEditor.getJSON(), currentEditor.getText({ blockSeparator: '\n' }))
@@ -229,7 +233,12 @@ function beginEditing(event: MouseEvent) {
   currentEditor.setEditable(true, false)
   currentEditor.commands.focus(position?.pos ?? 'end')
 }
-defineExpose({ awaitPendingImports, finishEditing })
+const canUndo = computed(() => { void transactionTick.value; return editor.value?.can().undo() ?? false })
+const canRedo = computed(() => { void transactionTick.value; return editor.value?.can().redo() ?? false })
+function focusEditor() { editor.value?.commands.focus('end') }
+function undo() { run(() => editor.value?.chain().focus().undo().run()) }
+function redo() { run(() => editor.value?.chain().focus().redo().run()) }
+defineExpose({ awaitPendingImports, finishEditing, focusEditor, undo, redo, canUndo, canRedo })
 </script>
 
 <template>

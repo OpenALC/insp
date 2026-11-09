@@ -3,9 +3,9 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, r
 import type { JSONContent } from '@tiptap/core'
 import type { Note, NoteContent, NoteGroup, NoteKind, NoteSummary, NoteWrite, PrivacyMode, SyncPolicy, WorkspaceSnapshot } from './domain/models'
 import { mindMapPreview, mindMapText, type MindMapDocument } from './domain/mindmap'
-import { platform, registerCloseGuard, vault } from './platform'
+import { platform, registerCloseGuard, vault, getDeviceInsets, setDeviceAppearance } from './platform'
 import VaultPanel from './components/VaultPanel.vue'
-import ThemeSelect from './components/ThemeSelect.vue'
+import SettingsPage from './components/SettingsPage.vue'
 import MindMapCardPreview from './components/MindMapCardPreview.vue'
 import { isEmptyRichText } from './domain/note-content'
 import inspLogo from './assets/insp-logo.png'
@@ -26,6 +26,12 @@ import {
   KeyRound,
   LockKeyhole,
   Menu,
+  Plus,
+  LayoutGrid,
+  List,
+  MoreHorizontal,
+  Undo2,
+  Redo2,
   Pencil,
   Search,
   Settings2,
@@ -38,7 +44,7 @@ import {
 
 type SaveState = 'saved' | 'unsaved' | 'saving' | 'error'
 type GroupDialog = { mode: 'create' } | { mode: 'rename'; groupId: string }
-type RichTextEditorHandle = { awaitPendingImports(): Promise<void>; finishEditing(): void }
+type RichTextEditorHandle = { awaitPendingImports(): Promise<void>; finishEditing(): void; focusEditor(): void; undo(): void; redo(): void; canUndo: boolean; canRedo: boolean }
 
 const snapshot = ref<WorkspaceSnapshot | null>(null)
 const activeNote = ref<Note | null>(null)
@@ -53,7 +59,7 @@ const richEditor = ref<RichTextEditorHandle | null>(null)
 const saveState = ref<SaveState>('saved')
 const actionError = ref('')
 const showError = ref(true)
-const vaultPanelMode = ref<'privacy' | 'sync' | null>(null)
+const vaultPanelMode = ref<'privacy' | null>(null)
 const vaultInitError = ref('')
 const draftPlainText = ref('')
 const mobilePane = ref<'list' | 'editor'>('list')
@@ -61,6 +67,52 @@ const sidebarOpen = ref(false)
 const mobileEditing = ref(false)
 const canCreateMindNote = computed(() => activeNote.value?.kind === 'richtext' && isEmptyRichText(activeNote.value.content))
 const noteSettingsOpen = ref(false)
+const settingsOpen = ref(false)
+const settingsPrivacy = ref(false)
+const listLayout = ref(localStorage.getItem('insp.noteLayout') === 'list' ? 'list' : 'grid')
+const listScrolled = ref(false)
+const listMenuOpen = ref(false)
+const newNoteFocus = ref(false)
+const privacyCovered = ref(false)
+const keyboardVisible = ref(false)
+function setListLayout(value: string) {
+  listLayout.value = value === 'list' ? 'list' : 'grid'
+  localStorage.setItem('insp.noteLayout', listLayout.value)
+}
+function applyInsets(event: Event) {
+  const insets = (event as CustomEvent).detail as { top: number; bottom: number; left: number; right: number }
+  for (const side of ['top', 'bottom', 'left', 'right'] as const) document.documentElement.style.setProperty('--native-inset-' + side, insets[side] + 'px')
+}
+function updateNativeTheme() {
+  void setDeviceAppearance(document.documentElement.dataset.theme === 'dark').catch(reportError)
+}
+async function loadInsets() {
+  const insets = await getDeviceInsets()
+  applyInsets(new CustomEvent('insp:insets', { detail: insets }))
+}
+async function openSettings() {
+  await runTransition(async () => { sidebarOpen.value = false; settingsOpen.value = true })
+}
+function authenticateSettings() {
+  settingsPrivacy.value = true
+  vaultPanelMode.value = 'privacy'
+}
+async function handleRevealed() {
+  if (settingsPrivacy.value || privacyCovered.value) { vaultPanelMode.value = null; settingsPrivacy.value = false; privacyCovered.value = false; return }
+  await enterPrivateArea()
+}
+async function handleVisibility() {
+  if (document.visibilityState === 'hidden' && vault.state.privateVisible) {
+    privacyCovered.value = true
+    if (filterKey.value === 'private') await leavePrivateArea()
+    vault.hidePrivate()
+  }
+  if (document.visibilityState === 'visible') {
+    privacyCovered.value = filterKey.value === 'private' && !vault.state.privateVisible
+    refreshRemoteWhenVisible()
+  }
+}
+
 const mobileLayout = ref(window.matchMedia('(max-width: 760px)').matches)
 const viewportHeight = ref(window.visualViewport?.height ?? window.innerHeight)
 let fullViewportHeight = viewportHeight.value
@@ -77,6 +129,7 @@ function updateViewport() {
   fullViewportHeight = Math.max(fullViewportHeight, height)
   const keyboardOpen = fullViewportHeight - height > 120
   if (mobileLayout.value && keyboardWasOpen && !keyboardOpen && mobileEditing.value) finishMobileEditing()
+  keyboardVisible.value = keyboardOpen
   keyboardWasOpen = keyboardOpen
   viewportHeight.value = height
 }
@@ -101,13 +154,13 @@ let saveQueue: Promise<void> = Promise.resolve()
 let closeGuardUnlisten: (() => void) | undefined
 let transitionWork: Promise<boolean> | null = null
 let remoteRefreshTimer: ReturnType<typeof setInterval> | undefined
-const workspaceAvailable = computed(() => vault.state.ready && vault.state.initialized && !vault.state.locked)
+const workspaceAvailable = computed(() => vault.state.ready && vault.state.initialized && !vault.state.locked && !vault.state.migrationRequired)
 
 const groups = computed(() => snapshot.value?.groups ?? [])
 const allNotes = computed(() => [...(snapshot.value?.notes ?? [])]
   .filter((note) => note.privacy === (filterKey.value === 'private' ? 'private' : 'normal'))
   .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
-const ungroupedCount = computed(() => (snapshot.value?.notes ?? []).filter((note) => note.groupId === null).length)
+const ungroupedCount = computed(() => allNotes.value.filter((note) => note.groupId === null).length)
 const filteredNotes = computed(() => {
   const query = searchQuery.value.trim().toLocaleLowerCase('zh-CN')
   return allNotes.value.filter((note) => {
@@ -309,6 +362,7 @@ async function flushBeforeClose() {
 function resetDraftState(note: Note) {
   activeNote.value = note
   mobileEditing.value = false
+  newNoteFocus.value = false
   noteSettingsOpen.value = false
   draftPlainText.value = note.kind === 'mindmap' ? mindMapText(note.content as MindMapDocument) : documentText(note.content as JSONContent)
   draftVersion = 0
@@ -406,6 +460,7 @@ async function retryInitialize() {
   isLoading.value = true
   try {
     await vault.initialize()
+    await vault.openLocal()
     vault.hidePrivate()
     if (workspaceAvailable.value) await loadWorkspaceAfterVaultOpen()
   } catch (error) {
@@ -460,11 +515,6 @@ async function leavePrivateArea(nextFilter = 'all') {
   })
 }
 
-function openSyncSettings() {
-  if (isTransitioning.value || !workspaceAvailable.value) return
-  sidebarOpen.value = false
-  vaultPanelMode.value = 'sync'
-}
 
 async function syncWorkspace() {
   if (!workspaceAvailable.value || isTransitioning.value || transitionWork) return
@@ -601,6 +651,8 @@ async function createNote(kind: NoteKind = 'richtext') {
     if (filterKey.value === 'private') note = await vault.setNotePolicy(note.id, 'private', 'localOnly')
     if (snapshot.value) snapshot.value = { ...snapshot.value, notes: [summaryFromNote(note), ...snapshot.value.notes] }
     resetDraftState(note)
+    mobileEditing.value = mobileLayout.value && kind === 'richtext'
+    newNoteFocus.value = mobileEditing.value
     mobilePane.value = 'editor'
   })
 }
@@ -612,6 +664,7 @@ async function deleteActiveNote() {
     await platform.repository.deleteNote(note.id)
     if (snapshot.value) snapshot.value = { ...snapshot.value, notes: snapshot.value.notes.filter((item) => item.id !== note.id) }
     activeNote.value = null
+    noteSettingsOpen.value = false
     mobilePane.value = 'list'
     draftPlainText.value = ''
     draftVersion = 0
@@ -711,13 +764,22 @@ function chooseFilter(key: string) {
 }
 
 async function showNoteList() {
-  await runTransition(async () => { mobilePane.value = 'list' })
+  await runTransition(async () => { mobilePane.value = 'list'; noteSettingsOpen.value = false })
 }
 
 function navigateBack(event: Event) {
-  if (vaultPanelMode.value) {
+  if (noteSettingsOpen.value) {
+    event.preventDefault()
+    noteSettingsOpen.value = false
+  } else if (listMenuOpen.value) {
+    event.preventDefault()
+    listMenuOpen.value = false
+  } else if (vaultPanelMode.value) {
     event.preventDefault()
     vaultPanelMode.value = null
+  } else if (settingsOpen.value) {
+    event.preventDefault()
+    settingsOpen.value = false
   } else if (groupDialog.value) {
     event.preventDefault()
     groupDialog.value = null
@@ -786,7 +848,7 @@ async function deleteGroup(group: NoteGroup) {
 }
 
 function countInGroup(groupId: string) {
-  return (snapshot.value?.notes ?? []).filter((note) => note.groupId === groupId).length
+  return allNotes.value.filter((note) => note.groupId === groupId).length
 }
 
 function formatDate(value: string) {
@@ -803,11 +865,16 @@ onMounted(async () => {
   window.visualViewport?.addEventListener('resize', updateViewport)
   window.addEventListener('insp:back', navigateBack)
   window.addEventListener('online', handleOnline)
-  document.addEventListener('visibilitychange', refreshRemoteWhenVisible)
+  document.addEventListener('visibilitychange', handleVisibility)
+  window.addEventListener('insp:insets', applyInsets)
+  window.addEventListener('insp:theme', updateNativeTheme)
+  updateNativeTheme()
+  void loadInsets().catch(reportError)
   remoteRefreshTimer = setInterval(refreshRemoteWhenVisible, 30_000)
   vault.setSyncHooks(beforeSyncApply, afterSyncApply)
   try {
     await vault.initialize()
+    await vault.openLocal()
     vault.hidePrivate()
   } catch (error) {
     vaultInitError.value = errorText(error)
@@ -832,7 +899,9 @@ onBeforeUnmount(() => {
   window.visualViewport?.removeEventListener('resize', updateViewport)
   window.removeEventListener('insp:back', navigateBack)
   window.removeEventListener('online', handleOnline)
-  document.removeEventListener('visibilitychange', refreshRemoteWhenVisible)
+  document.removeEventListener('visibilitychange', handleVisibility)
+  window.removeEventListener('insp:insets', applyInsets)
+  window.removeEventListener('insp:theme', updateNativeTheme)
   if (remoteRefreshTimer) clearInterval(remoteRefreshTimer)
   vault.setSyncHooks(async () => {}, async () => {})
   if (saveTimer !== undefined) clearTimeout(saveTimer)
@@ -848,14 +917,12 @@ onBeforeUnmount(() => {
     :error="vaultInitError"
     @retry="retryInitialize"
   />
-  <div v-else class="notes-app" :style="mobileLayout ? { height: viewportHeight + 'px' } : undefined" :class="{ 'mobile-editor-open': mobilePane === 'editor', 'sidebar-open': sidebarOpen, 'mobile-writing': mobileEditing, 'note-settings-open': noteSettingsOpen }">
+  <div v-else class="notes-app" :style="mobileLayout ? { height: viewportHeight + 'px' } : undefined" :class="{ 'mobile-editor-open': mobilePane === 'editor', 'sidebar-open': sidebarOpen, 'mobile-writing': mobileEditing, 'note-settings-open': noteSettingsOpen, 'keyboard-open': keyboardVisible }">
     <header class="mobile-header">
-      <button class="icon-button" type="button" aria-label="打开分组导航" @click="sidebarOpen = !sidebarOpen"><Menu :size="21" /></button>
-      <strong>{{ currentFilterName }}</strong>
-      <div class="mobile-security-actions">
-        <button class="vault-mobile-button" type="button" aria-label="同步设置" title="同步设置" :disabled="isTransitioning || isLoading" @click="openSyncSettings"><Settings2 :size="19" /></button>
-        <button class="vault-mobile-button" type="button" aria-label="锁定空间" title="锁定空间" :disabled="isTransitioning || isLoading || vault.state.syncing" @click="lockWorkspace"><LockKeyhole :size="19" /></button>
-      </div>
+      <button class="icon-button" type="button" aria-label="打开分组导航" @click="sidebarOpen = true"><Menu :size="25" /></button>
+      <strong :class="{ visible: listScrolled }">{{ currentFilterName === '全部笔记' ? '笔记' : currentFilterName }}</strong>
+      <button class="icon-button" type="button" :aria-label="listLayout === 'grid' ? '切换列表' : '切换宫格'" @click="setListLayout(listLayout === 'grid' ? 'list' : 'grid')"><List v-if="listLayout === 'grid'" :size="23" /><LayoutGrid v-else :size="22" /></button>
+      <button class="icon-button" aria-label="更多操作" @click="listMenuOpen = true"><MoreHorizontal :size="25" /></button>
     </header>
     <button v-if="sidebarOpen" class="sidebar-scrim" type="button" aria-label="关闭分组导航" @click="sidebarOpen = false"></button>
     <aside class="sidebar" aria-label="笔记导航">
@@ -894,23 +961,14 @@ onBeforeUnmount(() => {
         <div v-if="groups.length === 0" class="groups-empty">分组让笔记更好找</div>
       </nav>
 
-      <ThemeSelect class="sidebar-theme" />
-      <div class="sidebar-bottom">
-        <div class="local-status-icon"><ShieldCheck :size="16" /></div>
-        <div class="local-status-copy"><strong>本地加密</strong><span>口令保护 · 离线可用</span></div>
-        <span class="local-dot" aria-label="本地工作区"></span>
-        <div class="vault-sidebar-actions">
-          <button class="vault-sidebar-action" type="button" aria-label="同步设置" title="同步设置" :disabled="isTransitioning" @click="openSyncSettings"><Settings2 :size="16" /></button>
-          <button class="vault-sidebar-action" type="button" aria-label="锁定空间" title="锁定空间" :disabled="isTransitioning || isLoading || vault.state.syncing" @click="lockWorkspace"><LockKeyhole :size="16" /></button>
-        </div>
-      </div>
+      <div class="sidebar-bottom"><button class="sidebar-settings" type="button" @click="openSettings"><Settings2 :size="22" /><span>设置</span></button></div>
     </aside>
 
-    <section class="note-list-pane" aria-label="笔记列表">
+    <section class="note-list-pane" :class="{ 'layout-list': listLayout === 'list' }" aria-label="笔记列表" @scroll="listScrolled = ($event.target as HTMLElement).scrollTop > 70">
       <header class="list-pane-header">
         <div>
           <div class="eyebrow">拾页 / NOTES</div>
-          <h1>{{ currentFilterName }}</h1>
+          <h1>{{ currentFilterName === '全部笔记' ? '笔记' : currentFilterName }}</h1>
         </div>
         <div class="create-actions">
           <button class="create-note-button" type="button" aria-label="新建笔记" title="新建笔记" :disabled="isLoading || isTransitioning" @click="createNote('richtext')"><FilePlus2 :size="17" /><span>笔记</span></button>
@@ -920,7 +978,7 @@ onBeforeUnmount(() => {
 
       <label class="search-box">
         <Search :size="17" aria-hidden="true" />
-        <input v-model="searchQuery" type="search" placeholder="搜索标题和正文摘要" aria-label="搜索笔记标题和正文摘要" />
+        <input v-model="searchQuery" type="search" placeholder="搜索笔记" aria-label="搜索笔记标题和正文摘要" />
       </label>
 
       <nav class="mobile-group-filters" aria-label="笔记分组">
@@ -935,10 +993,10 @@ onBeforeUnmount(() => {
         <button v-for="note in filteredNotes" :key="note.id" class="note-card" :class="{ selected: activeNote?.id === note.id }" :disabled="isTransitioning" @click="openNote(note.id)">
           <span class="note-card-icon"><Workflow v-if="note.kind === 'mindmap'" :size="17" /><FileText v-else :size="17" /></span>
           <span class="note-card-content">
-            <span class="note-card-topline"><strong>{{ note.title || '未命名笔记' }}</strong><time>{{ formatDate(note.updatedAt) }}</time></span>
+            <span class="note-card-topline"><strong>{{ note.title || '未命名笔记' }}</strong></span>
             <MindMapCardPreview v-if="note.kind === 'mindmap' && note.mindMapPreview" :preview="note.mindMapPreview" />
             <span v-else class="note-preview">{{ note.preview || '还没有正文，点开继续记录。' }}</span>
-            <span class="note-card-foot"><span v-if="note.groupId" class="note-group-tag"><Folder :size="11" />{{ groups.find((item) => item.id === note.groupId)?.name ?? '分组' }}</span><span v-else class="note-group-tag muted">未分组</span></span>
+            <span class="note-card-foot"><time>{{ formatDate(note.updatedAt) }}</time><span v-if="note.groupId" class="note-group-tag">{{ groups.find((item) => item.id === note.groupId)?.name ?? '分组' }}</span><Workflow v-if="note.kind === 'mindmap'" :size="15" aria-label="思维笔记" /></span>
           </span>
           <ChevronRight class="note-card-chevron" :size="15" />
         </button>
@@ -957,7 +1015,7 @@ onBeforeUnmount(() => {
         </template>
       </div>
 
-      <footer class="list-footer"><span class="tiny-leaf"></span><span>今天也给自己留一页空白</span></footer>
+      <div class="floating-compose" aria-label="创建笔记"><button class="compose-main" aria-label="新建普通笔记" :disabled="isTransitioning" @click="createNote('richtext')"><Plus :size="27" /><span>笔记</span></button><span class="compose-separator"></span><button aria-label="新建思维笔记" :disabled="isTransitioning" @click="createNote('mindmap')"><Workflow :size="24" /><span>思维笔记</span></button></div>
     </section>
 
     <main class="editor-pane">
@@ -970,38 +1028,14 @@ onBeforeUnmount(() => {
         <header class="editor-topbar">
           <button class="icon-button mobile-back" type="button" :aria-label="mobileEditing ? '结束编辑' : '返回笔记列表'" :disabled="isTransitioning" @click="mobileEditing ? finishMobileEditing() : showNoteList()"><ArrowLeft :size="20" /></button>
           <div class="breadcrumb"><span>拾页</span><ChevronRight :size="14" /><span>{{ activeGroupName }}</span><ChevronRight :size="14" /><span class="breadcrumb-current">笔记</span></div>
+          <div v-if="mobileEditing && activeNote.kind === 'richtext'" class="mobile-history"><button class="icon-button" aria-label="撤销编辑" :disabled="!richEditor?.canUndo" @pointerdown.prevent @click="richEditor?.undo()"><Undo2 :size="22" /></button><button class="icon-button" aria-label="重做编辑" :disabled="!richEditor?.canRedo" @pointerdown.prevent @click="richEditor?.redo()"><Redo2 :size="22" /></button></div>
           <button v-if="mobileEditing" class="mobile-done" @click="finishMobileEditing">完成</button>
           <button class="mobile-note-settings icon-button" type="button" aria-label="笔记设置" :aria-expanded="noteSettingsOpen" @click="noteSettingsOpen = !noteSettingsOpen"><Settings2 :size="20" /></button>
-          <div class="editor-top-actions">
-            <label class="group-picker-label" for="note-group-picker">移动到</label>
-            <select id="note-group-picker" class="group-picker" :value="activeNote.groupId ?? ''" :disabled="isTransitioning" aria-label="选择笔记分组" @change="changeNoteGroup">
-              <option value="">未分组</option>
-              <option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option>
-            </select>
-            <button class="icon-button delete-note-button" type="button" aria-label="删除当前笔记" title="删除当前笔记" :disabled="isTransitioning" @click="deleteActiveNote"><Trash2 :size="17" /></button>
-          </div>
         </header>
 
         <div class="document-heading">
-          <div class="document-kicker"><span class="document-kind-dot"></span>{{ activeNote.kind === 'mindmap' ? '思维导图' : '随手记' }} <span class="kicker-separator">·</span> {{ formatDate(activeNote.updatedAt) }}</div>
+          <div class="document-kicker">{{ formatDate(activeNote.updatedAt) }}<span>｜</span>{{ draftPlainText.length }} 字</div>
           <input class="document-title" :value="activeNote.title" placeholder="未命名笔记" aria-label="笔记标题" :disabled="isTransitioning" @focus="mobileEditing = true" @input="updateTitle" />
-          <div class="note-policy-controls">
-            <label class="note-policy-control">
-              <span>隐私</span>
-              <select :value="activeNote.privacy" data-policy="privacy" :disabled="isTransitioning" aria-label="笔记隐私设置" @change="changePrivacy">
-                <option value="normal">普通笔记</option>
-                <option value="private">隐私笔记</option>
-              </select>
-            </label>
-            <label class="note-policy-control">
-              <span>同步</span>
-              <select :value="activeNote.syncPolicy" data-policy="sync" :disabled="isTransitioning" aria-label="笔记同步设置" @change="changeSyncPolicy">
-                <option value="localOnly">仅本机</option>
-                <option value="sync">同步此笔记</option>
-              </select>
-            </label>
-          </div>
-          <p v-if="activeNote.privacy === 'private' && activeNote.syncPolicy === 'sync'" class="private-sync-note">此隐私笔记已明确启用同步。</p>
         </div>
 
         <button v-if="canCreateMindNote" type="button" class="blank-mind-note" :disabled="isTransitioning" @pointerdown.prevent @click="createMindNoteFromBlank"><Workflow :size="17" />创建思维笔记<span>用层级整理想法</span></button>
@@ -1009,6 +1043,7 @@ onBeforeUnmount(() => {
           v-if="activeNote.kind === 'richtext'"
           :key="activeNote.id"
           ref="richEditor"
+          :autofocus="newNoteFocus"
           :reading="mobileLayout && !mobileEditing"
           @edit="mobileEditing = true"
           :content="activeNote.content as JSONContent"
@@ -1050,13 +1085,42 @@ onBeforeUnmount(() => {
       </div>
     </main>
 
+    <Transition name="settings-slide"><SettingsPage v-if="settingsOpen" :vault="vault" :layout="listLayout" @close="settingsOpen = false" @privacy="authenticateSettings" @sync="syncWorkspace" @joined="retryInitialize" @layout="setListLayout" /></Transition>
+    <div v-if="privacyCovered" class="privacy-cover"><LockKeyhole :size="34" /><span>隐私笔记已隐藏</span><button class="action-secondary" @click="vaultPanelMode = 'privacy'">验证后继续</button></div>
+    <div v-if="listMenuOpen" class="sheet-backdrop" @click.self="listMenuOpen = false"><section class="bottom-sheet" role="dialog" aria-modal="true" aria-label="笔记操作"><div class="sheet-grabber"></div><button class="sheet-action" @click="listMenuOpen = false; showGroupDialog({ mode: 'create' })"><FolderPlus :size="22" />新建分组</button><button class="sheet-action" @click="listMenuOpen = false; openPrivateArea()"><LockKeyhole :size="22" />隐私笔记</button><button class="sheet-cancel" @click="listMenuOpen = false">取消</button></section></div>
+    <div v-if="noteSettingsOpen && activeNote" class="sheet-backdrop" @click.self="noteSettingsOpen = false"><section class="bottom-sheet note-options" role="dialog" aria-modal="true" aria-label="笔记设置"><div class="sheet-grabber"></div><h2>笔记选项</h2>
+          <div class="editor-top-actions">
+            <label class="group-picker-label" for="note-group-picker">移动到</label>
+            <select id="note-group-picker" class="group-picker" :value="activeNote.groupId ?? ''" :disabled="isTransitioning" aria-label="选择笔记分组" @change="changeNoteGroup">
+              <option value="">未分组</option>
+              <option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option>
+            </select>
+            <button class="icon-button delete-note-button" type="button" aria-label="删除当前笔记" title="删除当前笔记" :disabled="isTransitioning" @click="deleteActiveNote"><Trash2 :size="17" /></button>
+          </div>
+          <div class="note-policy-controls">
+            <label class="note-policy-control">
+              <span>隐私</span>
+              <select :value="activeNote.privacy" data-policy="privacy" :disabled="isTransitioning" aria-label="笔记隐私设置" @change="changePrivacy">
+                <option value="normal">普通笔记</option>
+                <option value="private">隐私笔记</option>
+              </select>
+            </label>
+            <label class="note-policy-control">
+              <span>同步</span>
+              <select :value="activeNote.syncPolicy" data-policy="sync" :disabled="isTransitioning" aria-label="笔记同步设置" @change="changeSyncPolicy">
+                <option value="localOnly">仅本机</option>
+                <option value="sync">同步此笔记</option>
+              </select>
+            </label>
+          </div>
+          <p v-if="activeNote.privacy === 'private' && activeNote.syncPolicy === 'sync'" class="private-sync-note">此隐私笔记已明确启用同步。</p>
+<button class="sheet-cancel" @click="noteSettingsOpen = false">完成</button></section></div>
     <VaultPanel
       v-if="vaultPanelMode"
       :vault="vault"
       :mode="vaultPanelMode"
       @close="vaultPanelMode = null"
-      @revealed="enterPrivateArea"
-      @sync="syncWorkspace"
+      @revealed="handleRevealed"
     />
 
     <div v-if="groupDialog" class="modal-backdrop" @click.self="groupDialog = null">
