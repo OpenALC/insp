@@ -107,6 +107,13 @@ jobs:
       - run: npm ci
       - name: Build APK
         run: |
+          props=src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties
+          url=$(sed -n 's/^distributionUrl=//p' "$props" | tr -d '\\\r')
+          archive="$RUNNER_TEMP/${url##*/}"
+          curl -fLsS --retry 1 -o "$archive" "$url" ||
+            curl -fLsS --retry 2 -o "$archive" "https://repo.huaweicloud.com/gradle/${url##*/}"
+          echo "$(sed -n 's/^distributionSha256Sum=//p' "$props" | tr -d '\r')  $archive" | sha256sum --check
+          sed -i "s|^distributionUrl=.*|distributionUrl=file://$archive|" "$props"
           chmod +x src-tauri/gen/android/gradlew
           npm run tauri -- android build --debug --apk --target ${{ matrix.target }}
       - name: Verify 16 KB alignment in the packaged APK
