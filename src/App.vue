@@ -2,7 +2,7 @@
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { JSONContent } from '@tiptap/core'
 import type { Note, NoteContent, NoteGroup, NoteKind, NoteSummary, NoteWrite, PrivacyMode, SyncPolicy, WorkspaceSnapshot } from './domain/models'
-import { mindMapPreview, mindMapText, type MindMapDocument } from './domain/mindmap'
+import { mindMapPreview, mindMapText, UNTITLED_MIND_MAP, type MindMapDocument } from './domain/mindmap'
 import { platform, registerCloseGuard, vault, getDeviceInsets, setDeviceAppearance } from './platform'
 import VaultPanel from './components/VaultPanel.vue'
 import SettingsPage from './components/SettingsPage.vue'
@@ -29,6 +29,8 @@ import {
   Plus,
   LayoutGrid,
   List,
+  ListTree,
+  Network,
   MoreHorizontal,
   Undo2,
   Redo2,
@@ -56,6 +58,8 @@ const groupDialog = ref<GroupDialog | null>(null)
 const groupName = ref('')
 const groupNameInput = ref<HTMLInputElement | null>(null)
 const richEditor = ref<RichTextEditorHandle | null>(null)
+const mindEditor = ref<InstanceType<typeof MindMapEditor>>()
+const nextMindView = computed(() => mindEditor.value?.viewMode === 'tree' ? 'outline' : 'tree')
 const saveState = ref<SaveState>('saved')
 const actionError = ref('')
 const showError = ref(true)
@@ -67,6 +71,8 @@ const sidebarOpen = ref(false)
 const mobileEditing = ref(false)
 const canCreateMindNote = computed(() => activeNote.value?.kind === 'richtext' && isEmptyRichText(activeNote.value.content))
 const noteSettingsOpen = ref(false)
+const optionsPanel = ref<HTMLElement>()
+const optionsRestingHeight = ref(0)
 const settingsOpen = ref(false)
 const settingsPrivacy = ref(false)
 const listLayout = ref(localStorage.getItem('insp.noteLayout') === 'list' ? 'list' : 'grid')
@@ -127,6 +133,7 @@ function updateViewport() {
   mobileLayout.value = window.matchMedia('(max-width: 760px)').matches
   const height = window.visualViewport?.height ?? window.innerHeight
   if (viewportWidth !== window.innerWidth) {
+    optionsRestingHeight.value = 0
     fullViewportHeight = height
     viewportWidth = window.innerWidth
   }
@@ -143,6 +150,13 @@ function finishMobileEditing() {
   ;(document.activeElement as HTMLElement | null)?.blur()
   mobileEditing.value = false
   void flushSaves().catch(reportError)
+}
+
+async function openNoteOptions() {
+  optionsRestingHeight.value = mobileLayout.value && keyboardVisible.value ? fullViewportHeight : 0
+  noteSettingsOpen.value = true
+  await nextTick()
+  optionsPanel.value?.focus({ preventScroll: true })
 }
 
 let draftVersion = 0
@@ -691,7 +705,8 @@ async function createMindNoteFromBlank() {
 
 function updateDocument(content: NoteContent, plainText: string) {
   if (!activeNote.value) return
-  activeNote.value = { ...activeNote.value, content }
+  const title = activeNote.value.kind === 'mindmap' ? (content as MindMapDocument).root.text : activeNote.value.title
+  activeNote.value = { ...activeNote.value, title, content }
   draftPlainText.value = plainText
   markDraftChanged()
 }
@@ -997,7 +1012,7 @@ onBeforeUnmount(() => {
         <button v-for="note in filteredNotes" :key="note.id" class="note-card" :class="{ selected: activeNote?.id === note.id }" :disabled="isTransitioning" @click="openNote(note.id)">
           <span class="note-card-icon"><Workflow v-if="note.kind === 'mindmap'" :size="17" /><FileText v-else :size="17" /></span>
           <span class="note-card-content">
-            <span class="note-card-topline"><strong>{{ note.title || '未命名笔记' }}</strong></span>
+            <span class="note-card-topline"><strong>{{ note.title || (note.kind === 'mindmap' ? UNTITLED_MIND_MAP : '未命名笔记') }}</strong></span>
             <MindMapCardPreview v-if="note.kind === 'mindmap' && note.mindMapPreview" :preview="note.mindMapPreview" />
             <span v-else class="note-preview">{{ note.preview || '还没有正文，点开继续记录。' }}</span>
             <span class="note-card-foot"><time>{{ formatDate(note.updatedAt) }}</time><span v-if="note.groupId" class="note-group-tag">{{ groups.find((item) => item.id === note.groupId)?.name ?? '分组' }}</span><Workflow v-if="note.kind === 'mindmap'" :size="15" aria-label="思维笔记" /></span>
@@ -1034,10 +1049,11 @@ onBeforeUnmount(() => {
           <div class="breadcrumb"><span>拾页</span><ChevronRight :size="14" /><span>{{ activeGroupName }}</span><ChevronRight :size="14" /><span class="breadcrumb-current">笔记</span></div>
           <div v-if="mobileEditing && activeNote.kind === 'richtext'" class="mobile-history"><button class="icon-button" aria-label="撤销编辑" :disabled="!richEditor?.canUndo" @pointerdown.prevent @click="richEditor?.undo()"><Undo2 :size="22" /></button><button class="icon-button" aria-label="重做编辑" :disabled="!richEditor?.canRedo" @pointerdown.prevent @click="richEditor?.redo()"><Redo2 :size="22" /></button></div>
           <button v-if="mobileEditing" class="mobile-done" @click="finishMobileEditing">完成</button>
-          <button class="mobile-note-settings icon-button" type="button" aria-label="笔记设置" :aria-expanded="noteSettingsOpen" @click="noteSettingsOpen = !noteSettingsOpen"><Settings2 :size="20" /></button>
+          <button v-if="activeNote.kind === 'mindmap'" class="icon-button mind-view-toggle" type="button" :disabled="!mindEditor" :aria-label="nextMindView === 'tree' ? '切换到思维树' : '切换到列表'" :title="nextMindView === 'tree' ? '切换到思维树' : '切换到列表'" @pointerdown.prevent @click="mindEditor?.switchView(nextMindView)"><Network v-if="nextMindView === 'tree'" :size="21" /><ListTree v-else :size="21" /></button>
+          <button class="mobile-note-settings icon-button" type="button" aria-label="笔记设置" :aria-expanded="noteSettingsOpen" @pointerdown.prevent @click="openNoteOptions"><Settings2 :size="20" /></button>
         </header>
 
-        <div class="document-heading">
+        <div v-if="activeNote.kind === 'richtext'" class="document-heading">
           <div class="document-kicker">{{ formatDate(activeNote.updatedAt) }}<span>｜</span>{{ draftPlainText.length }} 字</div>
           <input class="document-title" :value="activeNote.title" placeholder="未命名笔记" aria-label="笔记标题" :disabled="isTransitioning" @focus="mobileEditing = true" @input="updateTitle" />
         </div>
@@ -1057,6 +1073,7 @@ onBeforeUnmount(() => {
         />
         <MindMapEditor
           v-else
+          ref="mindEditor"
           @focusin="onMindmapFocus"
           :key="activeNote.id"
           :content="activeNote.content as MindMapDocument"
@@ -1092,7 +1109,7 @@ onBeforeUnmount(() => {
     <Transition name="settings-slide"><SettingsPage v-if="settingsOpen" :vault="vault" :layout="listLayout" @close="settingsOpen = false" @privacy="authenticateSettings" @sync="syncWorkspace" @joined="retryInitialize" @layout="setListLayout" /></Transition>
     <div v-if="privacyCovered" class="privacy-cover"><LockKeyhole :size="34" /><span>隐私笔记已隐藏</span><button class="action-secondary" @click="vaultPanelMode = 'privacy'">验证后继续</button></div>
     <div v-if="listMenuOpen" class="sheet-backdrop" @click.self="listMenuOpen = false"><section class="bottom-sheet" role="dialog" aria-modal="true" aria-label="笔记操作"><div class="sheet-grabber"></div><button class="sheet-action" @click="listMenuOpen = false; showGroupDialog({ mode: 'create' })"><FolderPlus :size="22" />新建分组</button><button class="sheet-action" @click="listMenuOpen = false; openPrivateArea()"><LockKeyhole :size="22" />隐私笔记</button><button class="sheet-cancel" @click="listMenuOpen = false">取消</button></section></div>
-    <div v-if="noteSettingsOpen && activeNote" class="sheet-backdrop" @click.self="noteSettingsOpen = false"><section class="bottom-sheet note-options" role="dialog" aria-modal="true" aria-label="笔记设置"><div class="sheet-grabber"></div><h2>笔记选项</h2>
+    <div v-if="noteSettingsOpen && activeNote" class="sheet-backdrop note-options-backdrop" :class="{ 'dismissing-keyboard': optionsRestingHeight > 0 }" :style="viewportHeight < optionsRestingHeight ? { height: optionsRestingHeight + 'px' } : undefined" @click.self="noteSettingsOpen = false"><section ref="optionsPanel" class="bottom-sheet note-options" tabindex="-1" role="dialog" aria-modal="true" aria-label="笔记设置"><div class="sheet-grabber"></div><h2>笔记选项</h2>
           <div class="editor-top-actions">
             <label class="group-picker-label" for="note-group-picker">移动到</label>
             <select id="note-group-picker" class="group-picker" :value="activeNote.groupId ?? ''" :disabled="isTransitioning" aria-label="选择笔记分组" @change="changeNoteGroup">

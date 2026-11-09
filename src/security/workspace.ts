@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 import type { Attachment, Note, NoteGroup, PlatformAdapter, PlatformCapabilities } from '../domain/models'
-import { createMindMapDocument, mindMapPreview, type MindMapDocument } from '../domain/mindmap.ts'
+import { createMindMapDocument, mindMapPreview, mindMapText, unifyMindMapTitle, UNTITLED_MIND_MAP, type MindMapDocument } from '../domain/mindmap.ts'
 import { isEmptyRichText } from '../domain/note-content.ts'
 import type { NativeInvoke } from '../platform/native'
 import type { CipherEnvelope, RemoteChange, SyncMutation, PushResult } from '../sync/contracts'
@@ -51,6 +51,14 @@ const emptyMeta = (): Metadata => ({ dataDirectory: '', config: null, cursor: 0,
 const secretId = (spaceId: string) => `insp.vault.${spaceId}`
 
 const eligibleForSync = (note: StoredNote) => !note.deletedAt && note.syncPolicy === 'sync'
+
+function withUnifiedTitle(entity: Entity): Entity {
+  if (entity.type !== 'note' || entity.value.kind !== 'mindmap') return entity
+  const note = entity.value
+  const content = unifyMindMapTitle(note.title, note.content as MindMapDocument)
+  if (content === note.content) return entity
+  return { type: 'note', value: { ...note, title: content.root.text, content, preview: mindMapText(content).replace(/\s+/g, ' ').slice(0, 180) } }
+}
 
 export function normalizeEndpoint(input: string): string {
   const url = new URL(input.trim())
@@ -139,7 +147,8 @@ export class EncryptedWorkspace implements VaultController {
         getNote: async id => { await this.queue; return copy(this.note(id)) },
         createNote: (groupId, kind = 'richtext') => this.write(async () => {
           const now = timestamp()
-          const note: StoredNote = { id: crypto.randomUUID(), title: kind === 'mindmap' ? '未命名思维导图' : '未命名笔记', groupId, kind, privacy: 'normal', syncPolicy: 'sync', preview: '', createdAt: now, updatedAt: now, revision: 1, schemaVersion: 1, content: kind === 'mindmap' ? createMindMapDocument() : { type: 'doc', content: [{ type: 'paragraph' }] }, deletedAt: null }
+          const title = kind === 'mindmap' ? UNTITLED_MIND_MAP : '未命名笔记'
+          const note: StoredNote = { id: crypto.randomUUID(), title, groupId, kind, privacy: 'normal', syncPolicy: 'sync', preview: kind === 'mindmap' ? title : '', createdAt: now, updatedAt: now, revision: 1, schemaVersion: 1, content: kind === 'mindmap' ? createMindMapDocument(title) : { type: 'doc', content: [{ type: 'paragraph' }] }, deletedAt: null }
           await this.persist([{ type: 'note', value: note }])
           return copy(note)
         }),
@@ -148,9 +157,8 @@ export class EncryptedWorkspace implements VaultController {
           if (previous.kind !== 'richtext' || !isEmptyRichText(previous.content)) {
             throw new Error('只有空白笔记可以创建思维笔记，已有正文和图片会保留。')
           }
-          const content = createMindMapDocument()
-          const title = previous.title === '未命名笔记' ? '未命名思维笔记' : previous.title
-          if (previous.title !== '未命名笔记') content.root.text = title
+          const title = previous.title === '未命名笔记' ? UNTITLED_MIND_MAP : previous.title
+          const content = createMindMapDocument(title)
           const next: StoredNote = {
             ...previous, kind: 'mindmap', title, content, preview: content.root.text,
             updatedAt: timestamp(), revision: previous.revision + 1,
@@ -160,7 +168,16 @@ export class EncryptedWorkspace implements VaultController {
         }),
         saveNote: input => this.write(async () => {
           const previous = this.note(input.id)
-          const next: StoredNote = { ...previous, title: input.title.trim() || '未命名笔记', groupId: input.groupId, content: copy(input.content), preview: input.plainText.replace(/\s+/g, ' ').slice(0, 180), updatedAt: timestamp(), revision: previous.revision + 1 }
+          const content = copy(input.content)
+          let title = input.title.trim() || '未命名笔记'
+          let text = input.plainText
+          if (previous.kind === 'mindmap') {
+            const map = content as MindMapDocument
+            title = map.root.text.trim() ? map.root.text : UNTITLED_MIND_MAP
+            map.root.text = title
+            text = mindMapText(map)
+          }
+          const next: StoredNote = { ...previous, title, groupId: input.groupId, content, preview: text.replace(/\s+/g, ' ').slice(0, 180), updatedAt: timestamp(), revision: previous.revision + 1 }
           await this.persist([{ type: 'note', value: next }], [], { markDeleteIntent: this.orphanedAttachments(previous, next) })
           return copy(next)
         }),
@@ -293,7 +310,7 @@ export class EncryptedWorkspace implements VaultController {
   }
 
   private async persist(entities: Entity[], removed: string[] = [], options: CommitOptions = {}): Promise<void> {
-    entities = [...new Map(entities.map(entity => [entityId(entity), entity])).values()]
+    entities = [...new Map(entities.map(entity => [entityId(entity), withUnifiedTitle(entity)])).values()]
     const key = this.requireKey()
     const meta = copy(this.meta)
     const puts: { id: string; payload: string }[] = []
@@ -450,7 +467,7 @@ export class EncryptedWorkspace implements VaultController {
         if (row.id === '$meta' || row.payload === null) continue
         const entity = await decryptValue<Entity>(key, this.header!.id, row.id, JSON.parse(row.payload) as CipherEnvelope)
         if (entityId(entity) !== row.id) throw new Error('加密记录标识不匹配。')
-        entities.set(row.id, entity)
+        entities.set(row.id, withUnifiedTitle(entity))
       }
       if (epoch !== this.epoch) throw new Error('加密空间已锁定。')
       this.key = key
@@ -660,6 +677,11 @@ export class EncryptedWorkspace implements VaultController {
           if (localOnly || newerLocal || locallyDeleted) { acknowledgements.push({ change, keepDirty: true }); continue }
           if (!own && dirty && existing?.type === 'note' && !existing.value.deletedAt) {
             const localCopy: StoredNote = { ...copy(existing.value), id: crypto.randomUUID(), title: existing.value.title + '（冲突副本）', syncPolicy: 'localOnly', revision: 1, updatedAt: timestamp() }
+            if (localCopy.kind === 'mindmap') {
+              const map = localCopy.content as MindMapDocument
+              map.root.text = localCopy.title
+              localCopy.preview = mindMapText(map).replace(/\s+/g, ' ').slice(0, 180)
+            }
             updates.push({ type: 'note', value: localCopy })
             effectiveNotes.set(localCopy.id, localCopy)
           }

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Attachment, Note, NoteGroup } from '../domain/models'
+import { type MindMapDocument, UNTITLED_MIND_MAP } from '../domain/mindmap.ts'
 import type { NativeInvoke } from '../platform/native'
 import type { CipherEnvelope, RemoteChange, SyncMutation } from '../sync/contracts'
 import { decryptValue, unlockVault, type VaultHeader } from './crypto.ts'
@@ -617,6 +618,45 @@ test('blank-to-mindmap preserves identity, group and private sync policy across 
   await restarted.unlock(PASSWORD)
   await restarted.revealPrivate(PASSWORD)
   assert.equal((await restarted.platform.repository.getNote(blank.id)).kind, 'mindmap')
+})
+
+test('old independent titles preserve the original branch and new root edits survive sync and reopen', async () => {
+  const branch = { id: 'old-root', text: '原中心', children: [{ id: 'first', text: '原分支', children: [] }] }
+  const legacy = emptyLegacy()
+  legacy.notes.push({ ...legacyNote('map', '原名称'), kind: 'mindmap', content: { type: 'mindmap', root: branch } })
+  const store = createStore(legacy)
+  const server = new MemorySyncServer()
+  const source = workspace(store, server)
+  await source.initialize()
+  await source.setup(PASSWORD)
+  const repo = source.platform.repository
+  const old = await repo.getNote('map')
+  const doc = old.content as MindMapDocument
+  assert.equal(doc.root.text, old.title)
+  assert.deepEqual(doc.root.children, [branch])
+  const blank = await repo.createNote(null, 'mindmap')
+  assert.equal(blank.title, UNTITLED_MIND_MAP)
+  assert.equal((blank.content as MindMapDocument).root.text, UNTITLED_MIND_MAP)
+  const converted = await repo.convertToMindMap((await repo.createNote(null)).id)
+  assert.equal(converted.title, UNTITLED_MIND_MAP)
+  assert.equal((converted.content as MindMapDocument).root.text, converted.title)
+  doc.root.text = '新计划'
+  const saved = await repo.saveNote({ id: old.id, title: '旧索引', groupId: null, content: doc, plainText: '' })
+  assert.equal(saved.title, '新计划')
+  await source.configureSync(ENDPOINT)
+  const second = workspace(createStore(), server)
+  await second.initialize()
+  await second.setup(PASSWORD, source.state.connectionCode)
+  const restarted = workspace(store, server)
+  await restarted.initialize()
+  await restarted.unlock(PASSWORD)
+  for (const device of [second, restarted]) {
+    const map = await device.platform.repository.getNote('map')
+    assert.equal(map.title, '新计划')
+    assert.deepEqual(map.content, doc)
+    const summary = (await device.platform.repository.loadWorkspace()).notes.find(n => n.id === 'map')!
+    assert.equal(summary.title, summary.mindMapPreview?.root)
+  }
 })
 
 test('blank-to-mindmap refuses text and attachment-only notes without changing their content', async () => {

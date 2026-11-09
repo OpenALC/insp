@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { ChevronDown, ChevronRight, ListTree, Network, Plus, RotateCcw, ZoomIn, ZoomOut } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, Plus, RotateCcw, ZoomIn, ZoomOut } from 'lucide-vue-next'
 import type { MindMapDocument, MindMapNode } from '../domain/mindmap'
-import { mindMapText } from '../domain/mindmap'
+import { mindMapText, UNTITLED_MIND_MAP } from '../domain/mindmap'
 import MindMapOutlineNode from './MindMapOutlineNode.vue'
 import MindMapNodeField from './MindMapNodeField.vue'
 import MindMapNodeTools from './MindMapNodeTools.vue'
@@ -116,10 +116,12 @@ function caret() {
 
 function finishPendingInput() {
   const field = selectedField()
-  if (!field || document.activeElement !== field || field.value === selected.value.node.text) return
+  if (!field || document.activeElement !== field) return
+  const fieldText = () => field.value || (selectedId.value === documentState.value.root.id ? UNTITLED_MIND_MAP : '')
+  if (fieldText() === selected.value.node.text) return
   // Give the IME a chance to finish before replacing this field with another one.
   field.blur()
-  if (field.value !== selected.value.node.text) updateText(selectedId.value, field.value)
+  if (fieldText() !== selected.value.node.text) updateText(selectedId.value, fieldText())
 }
 
 function animateLabel(target: HTMLElement, origin: DOMRect) {
@@ -250,10 +252,7 @@ function toggleCollapse(id: string) {
   collapsedIds.value = next
 }
 
-const nodeCount = computed(() => {
-  const count = (node: MindMapNode): number => 1 + node.children.reduce((total, child) => total + count(child), 0)
-  return count(documentState.value.root)
-})
+defineExpose({ viewMode, switchView })
 
 const treeLayout = computed(() => {
   const nodes: PositionedNode[] = []
@@ -319,13 +318,6 @@ function adjustZoom(delta: number) {
 
 <template>
   <section ref="editorElement" class="mindmap-editor" :data-editable="editable" aria-label="思维笔记编辑器">
-    <header class="mindmap-header">
-      <div class="mindmap-heading"><strong>思维笔记</strong><span>{{ nodeCount }} 个主题</span></div>
-      <div class="mindmap-mode-switch" :data-view="viewMode" role="group" aria-label="思维笔记视图">
-        <button type="button" :aria-pressed="viewMode === 'outline'" :class="{ active: viewMode === 'outline' }" @pointerdown.prevent @click="switchView('outline')"><ListTree :size="16" />列表</button>
-        <button type="button" :aria-pressed="viewMode === 'tree'" :class="{ active: viewMode === 'tree' }" @pointerdown.prevent @click="switchView('tree')"><Network :size="16" />思维树</button>
-      </div>
-    </header>
 
     <div ref="viewport" v-if="viewMode === 'outline'" class="mindmap-outline-viewport">
       <ul class="mindmap-outline-tree" role="tree" aria-label="思维笔记主题列表">
@@ -346,7 +338,6 @@ function adjustZoom(delta: number) {
 
     <template v-else>
       <div class="mindmap-tree-navigation">
-        <span>滑动画布查看分支</span>
         <div class="mindmap-zoom-controls" role="group" aria-label="思维树缩放">
           <button type="button" :disabled="zoom <= 0.55" aria-label="缩小" title="缩小" @click="adjustZoom(-0.15)"><ZoomOut :size="16" /></button>
           <button class="mindmap-zoom-reset" type="button" aria-label="恢复默认缩放" title="恢复默认缩放" @click="zoom = 1"><RotateCcw :size="13" /><span>{{ Math.round(zoom * 100) }}%</span></button>
@@ -369,7 +360,7 @@ function adjustZoom(delta: number) {
               :aria-label="entry.depth === 0 ? '中心主题' : `第 ${entry.depth} 层分支`"
               @click="selectNode(entry.node.id)"
             >
-              <MindMapNodeField class="mindmap-tree-text" :id="entry.node.id" :text="entry.node.text" :editable="editable"
+              <MindMapNodeField class="mindmap-tree-text" :id="entry.node.id" :text="entry.node.text" :editable="editable" :root="entry.depth === 0"
                 :label="entry.depth === 0 ? '中心主题内容' : `第 ${entry.depth} 层分支内容`" :rows="2"
                 @select="selectNode" @edit="updateText" @command="nodeCommand" />
               <button v-if="editable && selectedId === entry.node.id" class="mindmap-tree-add" type="button"

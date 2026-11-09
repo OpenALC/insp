@@ -291,10 +291,11 @@ export class NotesRepository {
     await this.ensureLegacyWritable();
     const id = util.generateRandomUUID();
     const timestamp = new Date().toISOString();
+    const title = kind === 'mindmap' ? '未命名的思维笔记' : '未命名笔记';
     let contentJson: string;
     if (kind === 'mindmap') {
       const children: MindMapBranch[] = [];
-      const root: MindMapBranch = { id: util.generateRandomUUID(), text: '', children };
+      const root: MindMapBranch = { id: util.generateRandomUUID(), text: title, children };
       const content: MindMapContent = { type: 'mindmap', root };
       contentJson = JSON.stringify(content);
     } else {
@@ -302,7 +303,6 @@ export class NotesRepository {
       const content: RichTextContent = { type: 'doc', content: [paragraph] };
       contentJson = JSON.stringify(content);
     }
-    const title = kind === 'mindmap' ? '未命名思维导图' : '未命名笔记';
     await this.store.executeSql(
       'INSERT INTO notes (id, title, group_id, kind, privacy, sync_policy, schema_version, content, plain_text, preview, revision, server_revision, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [id, title, groupId, kind, 'normal', 'localOnly', 1, contentJson, '', '', 1, 0, timestamp, timestamp]
@@ -312,11 +312,16 @@ export class NotesRepository {
 
   async saveNote(input: NoteWrite): Promise<Note> {
     await this.ensureLegacyWritable();
-    const title = input.title.trim() || '未命名笔记';
+    let title = input.title.trim() || '未命名笔记';
     const preview = input.plainText.replace(/\s+/g, ' ').slice(0, 180);
-    const contentJson = JSON.stringify(input.content);
-    const contentType = (JSON.parse(contentJson) as ContentTypeMarker).type;
+    const contentType = (input.content as ContentTypeMarker).type;
     const kind: NoteKind = contentType === 'mindmap' ? 'mindmap' : 'richtext';
+    if (kind === 'mindmap') {
+      const map = input.content as MindMapContent;
+      title = map.root.text.trim() ? map.root.text : '未命名的思维笔记';
+      map.root.text = title;
+    }
+    const contentJson = JSON.stringify(input.content);
     await this.store.executeSql(
       'UPDATE notes SET title = ?, group_id = ?, kind = ?, content = ?, plain_text = ?, preview = ?, updated_at = ?, revision = revision + 1 WHERE id = ? AND deleted_at IS NULL',
       [title, input.groupId, kind, contentJson, input.plainText, preview, new Date().toISOString(), input.id]

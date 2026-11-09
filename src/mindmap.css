@@ -9,18 +9,6 @@
   font-family: 'DM Sans', 'Noto Sans SC', 'Microsoft YaHei UI', sans-serif;
 }
 
-.mindmap-editor .mindmap-header { display: flex; flex: 0 0 auto; min-height: 60px; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
-.mindmap-editor .mindmap-heading { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
-.mindmap-editor .mindmap-heading strong { font-size: 14px; font-weight: 600; }
-.mindmap-editor .mindmap-heading > span { font-size: 12px; }
-.mindmap-editor .mindmap-mode-switch { display: flex; flex: 0 0 auto; gap: 2px; padding: 3px; border-radius: 12px; background: var(--surface-soft); }
-.mindmap-editor .mindmap-mode-switch button { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border: 0; border-radius: 9px; background: transparent; font-size: 13px; cursor: pointer; }
-.mindmap-editor .mindmap-mode-switch { position: relative; display: grid; grid-template-columns: 1fr 1fr; }
-.mindmap-editor .mindmap-mode-switch::before { content: ''; position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 8px) / 2); border-radius: 9px; background: var(--brand-soft); transition: transform .21s cubic-bezier(.2,.8,.2,1); }
-.mindmap-editor .mindmap-mode-switch[data-view='tree']::before { transform: translateX(calc(100% + 2px)); }
-.mindmap-editor .mindmap-mode-switch button { position: relative; color: var(--ink); }
-.mindmap-editor .mindmap-mode-switch button.active { font-weight: 600; }
-@media (prefers-reduced-motion: reduce) { .mindmap-editor .mindmap-mode-switch::before { transition: none; } }
 
 .mindmap-editor .mindmap-outline-viewport,
 .mindmap-editor .mindmap-tree-viewport { flex: 1; min-height: 0; min-width: 0; overflow: auto; overscroll-behavior: contain; }
@@ -43,6 +31,8 @@
 .mindmap-editor .mindmap-outline-row-root .mindmap-collapse-button,
 .mindmap-editor .mindmap-outline-row-root .mindmap-outline-marker { margin-top: 5px; }
 
+.mindmap-outline-row-root textarea::placeholder, .mindmap-tree-node-root textarea::placeholder { color: var(--ink); opacity: 1; }
+
 /* The mirror lets wrapped text grow with the paper outline, including trailing newlines. */
 .mindmap-editor .mindmap-outline-field { display: grid; flex: 1; min-width: 100px; font-size: 16px; line-height: 1.65; }
 .mindmap-editor .mindmap-outline-field::after,
@@ -55,8 +45,7 @@
 .mindmap-editor .mindmap-first-topic { display: flex; align-items: center; gap: 12px; min-height: 44px; margin-left: 12px; padding: 5px; border: 0; color: var(--ink); background: transparent; text-align: left; font-size: 14px; cursor: text; }
 .mindmap-editor .mindmap-first-topic::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--brand-line); }
 
-.mindmap-editor .mindmap-tree-navigation { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 10px; padding: 6px 0; }
-.mindmap-editor .mindmap-tree-navigation > span { font-size: 12px; }
+.mindmap-editor .mindmap-tree-navigation { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; padding: 2px 0; }
 .mindmap-editor .mindmap-zoom-controls { display: flex; align-items: center; gap: 2px; }
 .mindmap-editor .mindmap-zoom-controls button { display: inline-flex; min-width: 36px; height: 36px; align-items: center; justify-content: center; gap: 4px; padding: 0 5px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
 .mindmap-editor .mindmap-zoom-reset { font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -83,8 +72,6 @@
 .mindmap-editor button:disabled { opacity: .4; cursor: not-allowed; }
 
 @media (max-width: 760px) {
-  .mindmap-editor .mindmap-header { min-height: 60px; gap: 8px; }
-  .mindmap-editor .mindmap-mode-switch button { min-height: 40px; padding: 0 10px; }
   .mindmap-editor .mindmap-outline-viewport { padding: 12px 0 24px; }
   .mindmap-editor .mindmap-outline-group { margin-left: 15px; padding-left: 10px; }
   .mindmap-editor .mindmap-outline-group > .mindmap-outline-item > .mindmap-outline-row::before { left: -10px; width: 8px; }

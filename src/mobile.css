@@ -9,6 +9,7 @@
 .mobile-header, .mobile-back, .sidebar-scrim, .floating-compose, .mobile-group-filters,
 .mobile-editor-tools, .mobile-done, .mobile-history, .mobile-node-menu, .blank-mind-note { display: none; }
 .mobile-note-settings { display: grid; }
+.editor-topbar .mind-view-toggle { flex: 0 0 44px; width: 44px; height: 44px; margin-left: auto; }
 .create-actions { display: flex; align-items: center; gap: 6px; }
 .create-map-button { background: var(--brand-soft); box-shadow: none; }
 .sidebar-settings { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 48px; padding: 12px; color: var(--ink); border: 0; border-radius: 14px; background: transparent; text-align: left; cursor: pointer; }
@@ -50,6 +51,9 @@ button.settings-row { cursor: pointer; }
 .sheet-backdrop { position: fixed; z-index: 90; inset: 0; display: grid; align-items: end; padding: 16px; background: var(--overlay); animation: veil-in .2s ease both; }
 .bottom-sheet { position: relative; width: min(100%, 500px); max-height: 88dvh; margin: 0 auto; padding: 12px 14px calc(14px + var(--safe-bottom)); overflow: auto; border-radius: 28px; color: var(--ink); background: var(--paper); box-shadow: 0 12px 40px rgba(var(--shadow-rgb), .14); animation: sheet-in .32s var(--motion-out) both; }
 .sheet-grabber { width: 36px; height: 4px; border-radius: 4px; margin: 0 auto 20px; background: var(--line); }
+.note-options-backdrop.dismissing-keyboard { animation: none; }
+.note-options-backdrop.dismissing-keyboard .note-options { max-height: 88%; animation: none; }
+.note-options:focus { outline: none; }
 .bottom-sheet h2 { font-size: 24px; margin: 8px 12px 12px; }
 .sheet-action { display: flex; width: 100%; min-height: 60px; align-items: center; gap: 16px; padding: 14px 18px; color: var(--ink); background: transparent; border: 0; border-radius: 16px; text-align: left; font-size: 16px; }
 .sheet-action:active, .settings-row:active { background: var(--surface-soft); }

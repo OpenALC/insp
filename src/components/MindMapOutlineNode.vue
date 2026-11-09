@@ -55,6 +55,7 @@ const collapsed = computed(() => props.collapsedIds.has(props.node.id))
           class="mindmap-outline-text"
           :id="node.id"
           :text="node.text"
+          :root="depth === 0"
           :editable="editable"
           :label="depth === 0 ? '中心主题内容' : `第 ${depth} 层分支内容`"
           rows="1"

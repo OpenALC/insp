@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { UNTITLED_MIND_MAP } from '../domain/mindmap'
 
 const props = defineProps<{
   id: string
   text: string
   editable: boolean
   label: string
+  root?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -15,9 +17,9 @@ const emit = defineEmits<{
 }>()
 
 const value = computed({
-  get: () => props.text,
+  get: () => props.root && props.text === UNTITLED_MIND_MAP ? '' : props.text,
   set: (text: string) => {
-    if (props.editable) emit('edit', props.id, text)
+    if (props.editable) emit('edit', props.id, props.root && !text ? UNTITLED_MIND_MAP : text)
   },
 })
 
@@ -100,7 +102,7 @@ function onComposition(event: CompositionEvent) {
     :readonly="!editable"
     :aria-label="label"
     :data-mindmap-node-id="id"
-    placeholder="新主题"
+    :placeholder="root ? UNTITLED_MIND_MAP : '新主题'"
     enterkeyhint="enter"
     spellcheck="true"
     @focus="emit('select', id)"
