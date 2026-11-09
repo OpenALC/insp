@@ -97,6 +97,12 @@ function authenticateSettings() {
   settingsPrivacy.value = true
   vaultPanelMode.value = 'privacy'
 }
+function closePrivacyPanel() {
+  vaultPanelMode.value = null
+  settingsPrivacy.value = false
+  privacyCovered.value = filterKey.value === 'private'
+  vault.hidePrivate()
+}
 async function handleRevealed() {
   if (settingsPrivacy.value || privacyCovered.value) { vaultPanelMode.value = null; settingsPrivacy.value = false; privacyCovered.value = false; return }
   await enterPrivateArea()
@@ -776,7 +782,7 @@ function navigateBack(event: Event) {
     listMenuOpen.value = false
   } else if (vaultPanelMode.value) {
     event.preventDefault()
-    vaultPanelMode.value = null
+    closePrivacyPanel()
   } else if (settingsOpen.value) {
     event.preventDefault()
     settingsOpen.value = false
@@ -1119,7 +1125,7 @@ onBeforeUnmount(() => {
       v-if="vaultPanelMode"
       :vault="vault"
       :mode="vaultPanelMode"
-      @close="vaultPanelMode = null"
+      @close="closePrivacyPanel"
       @revealed="handleRevealed"
     />
 
