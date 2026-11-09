@@ -1,15 +1,15 @@
 # CI 与构建产物
 
-`Build` 工作流在推送 main、提交 PR 或手动运行时启动四个独立任务：
+`Build` 工作流在推送 main、提交 PR 或手动运行时启动以下任务，Android 两种架构分别构建：
 
 | 任务 | 检查 | 产物 |
 | --- | --- | --- |
 | Shared frontend | 锁定依赖安装、加密和同步策略测试、Vue/TypeScript 检查、Vite 生产构建 | Web 资源 |
 | Windows executable | Rust 格式及迁移测试、Tauri 发布构建 | Windows x64 EXE |
-| Android emulator APK | Android SDK/NDK、Rust Android 目标、Gradle/Tauri 构建 | x86_64 调试 APK |
+| Android APK | Gradle/Tauri 构建；检查 APK 内原生库的位置和 ELF LOAD 段均满足 16 KB 对齐 | x86_64 模拟器和 arm64-v8a 真机调试 APK |
 | Linux encrypted sync server | Rust 格式、HTTP 协议测试、Linux 发布构建、Docker 镜像构建 | Linux x64 同步服务 |
 
-工作流只授予仓库读取权限，不依赖发布签名密钥。Android 调试包用于模拟器开发，正式发行需另设签名。
+工作流只授予仓库读取权限，不依赖发布签名密钥。Android 调试包用于模拟器或真机开发，正式发行需另设签名。
 
 鸿蒙另有 `HarmonyOS native build` 手动工作流，运行在已安装 DevEco Studio SDK、ohpm 和 hvigorw 的 Windows runner，标签为 `harmonyos`。验证使用一次性 `--ephemeral` runner：领取一个任务后自动注销，不安装常驻服务。后续手动运行前需先提供对应 runner；公开仓库的 fork PR 不会触发该任务。
 

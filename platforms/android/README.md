@@ -30,7 +30,9 @@ The generated Android project is in `src-tauri/gen/android`. The project pins co
 - The shared vault requires its password after process restart. Private notes are hidden from ordinary lists and search, and require password confirmation to reveal. New private notes default to local-only storage; syncing one requires an explicit change to its sync policy.
 - Native HTTP carries encrypted sync records to the Linux service. Production endpoints use HTTPS; local development endpoints can use HTTP. Android emulators can use `adb reverse tcp:8787 tcp:8787` to reach a host service bound to loopback.
 
-The emulator build targets x86_64. Add `aarch64-linux-android` only when building a device APK or release artifact for ARM64.
+For an ARM64 phone, install the `aarch64-linux-android` Rust target and build with `npm run tauri -- android build --debug --apk --target aarch64`. On Windows use the corresponding `aarch64-linux-android24` NDK compiler wrappers. The Gradle ABI directory is `arm64-v8a` and the debug assemble task is `:app:assembleArm64Debug`.
+
+With NDK r27, the Rust build script links the Android shared library with 16 KB page alignment. CI checks both the packaged ELF LOAD segments and the APK's uncompressed library offsets for ARM64 and x86_64. ZIP alignment alone does not fix a 4 KB ELF. See [Android's 16 KB page size guide](https://developer.android.com/guide/practices/page-sizes).
 
 ## Emulator verification
 
