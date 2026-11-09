@@ -13,6 +13,10 @@ gradlePlugin {
 
 repositories {
     google()
+    // Avoid the release-asset redirect for the Gradle Kotlin DSL compiler.
+    maven("https://maven-central.storage-download.googleapis.com/maven2/") {
+        content { includeVersion("org.jetbrains.kotlin", "kotlin-compiler-embeddable", "2.3.21") }
+    }
     mavenCentral()
 }
 
