@@ -122,3 +122,20 @@
   .mindmap-action-button,
   .mindmap-tree-node { transition: none; }
 }
+@media (max-width:760px) {
+ .mindmap-header { flex-wrap:wrap;padding:10px 0; }
+ .mindmap-header-actions { flex-wrap:wrap; }
+ .mindmap-mode-switch button { min-height:40px;font-size:13px; }
+ .mindmap-heading-mark { display:none; }
+ .mindmap-outline-row { position:relative;flex-wrap:wrap;padding:4px 0;border:0;border-radius:0;box-shadow:none;background:transparent; }
+ .mindmap-outline-row-root { margin-bottom:16px;padding:8px 0;border-bottom:2px solid var(--brand-line); }
+ .mindmap-outline-text { min-width:0;min-height:46px;padding:6px;resize:none;font-size:16px;line-height:1.65; }
+ .mindmap-outline-row-root .mindmap-outline-text { font-size:20px;font-weight:600; }
+ .mindmap-outline-group { margin-left:12px;padding-left:12px;border-left:1px solid var(--brand-line); }
+ .mobile-node-menu { display:block;min-width:40px;min-height:44px;padding:0;color:var(--ink);border:0;border-radius:8px;background:transparent; }
+ .mindmap-outline-actions { display:none; }
+ .mindmap-outline-actions.node-actions-open { display:flex;padding:6px;border-radius:10px;background:var(--surface-soft); }
+ .mindmap-outline-actions .mindmap-action-button { width:40px;height:40px; }
+ .mindmap-outline-hint { display:none; }
+ .mindmap-add-root-child { width:auto;min-height:40px;padding:0 9px;font-size:13px; }
+}

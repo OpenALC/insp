@@ -243,12 +243,12 @@ function handleTreeText(id: string, event: Event) {
 </script>
 
 <template>
-  <section class="mindmap-editor" aria-label="思维导图编辑器">
+  <section class="mindmap-editor" :data-editable="editable" aria-label="思维导图编辑器">
     <header class="mindmap-header">
       <div class="mindmap-heading">
         <span class="mindmap-heading-mark" aria-hidden="true"><Network :size="16" /></span>
         <div>
-          <strong>思维导图</strong>
+          <strong>思维笔记</strong>
           <span>{{ nodeCount }} 个主题</span>
         </div>
       </div>

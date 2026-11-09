@@ -66,3 +66,50 @@
   .error-banner { font-size: 12px; }
   .welcome-empty { padding: 18px; }
 }
+.map-card-preview { display:flex;min-width:0;flex-direction:column;gap:9px;padding:9px 0;color:var(--ink); }
+.map-preview-root { width:fit-content;max-width:100%;padding:5px 9px;border-radius:6px;background:var(--brand-soft);font-size:13px;font-weight:600;overflow-wrap:anywhere; }
+.map-preview-branches { display:flex;flex-direction:column;gap:7px;margin-left:9px;padding-left:15px;border-left:2px solid var(--brand-line); }
+.map-preview-branch { position:relative;font-size:12px;overflow-wrap:anywhere; }
+.map-preview-branch::before { position:absolute;left:-15px;top:50%;width:10px;border-top:1px solid var(--brand-line);content:''; }
+.map-preview-more { font-size:12px; }
+.mobile-editor-tools,.mobile-done,.mobile-node-menu,.mobile-group-filters,.mobile-note-settings { display:none; }
+@media (max-width:760px) {
+ .mobile-group-filters { display:flex;flex:0 0 auto;gap:8px;overflow-x:auto;padding:14px 0 4px;scrollbar-width:none; }
+ .mobile-group-filters button { min-height:38px;flex:0 0 auto;max-width:160px;padding:0 14px;border:0;border-radius:18px;background:var(--surface-soft);color:var(--ink);font:inherit;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+ .mobile-group-filters button.active { background:var(--brand-soft); }
+ .note-list { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-content:start;gap:10px; }
+ .note-card { display:block;min-width:0;height:auto;min-height:165px;padding:16px 13px;border-radius:16px; }
+ .note-card-content { height:100%;gap:12px; }
+ .note-card-topline { flex-direction:column;align-items:flex-start;gap:6px; }
+ .note-card-topline strong { display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal;line-height:1.5; }
+ .note-preview { -webkit-line-clamp:4;line-height:1.65; }
+ .note-card-icon,.note-card-chevron { display:none; }
+ .note-card-foot { margin-top:auto; }
+ .mobile-note-settings { display:grid; }
+ .mobile-done { display:block;flex:0 0 auto;min-height:44px;padding:0 12px;border:0;border-radius:10px;background:var(--brand-soft);color:var(--ink);font-size:15px; }
+ .editor-top-actions,.note-policy-controls,.private-sync-note { display:none; }
+ .note-settings-open .editor-top-actions { display:flex; }
+ .note-settings-open .note-policy-controls { display:flex; }
+ .note-settings-open .private-sync-note { display:block; }
+ .note-settings-open .editor-topbar { flex-wrap:wrap; }
+ .mobile-writing .document-heading { padding-top:8px;padding-bottom:10px; }
+ .mobile-writing .editor-footer { display:none; }
+ .format-toolbar { order:2;display:none;flex:0 0 50px;border-top:1px solid var(--line);border-bottom:0;background:var(--paper); }
+ .format-open:not(.editor-reading) .format-toolbar { display:flex; }
+ .mobile-editor-tools { order:3;display:flex;min-height:54px;flex:0 0 auto;align-items:center;justify-content:space-around;gap:4px;border-top:1px solid var(--line);background:var(--paper); }
+ .mobile-editor-tools button { display:flex;min-width:44px;min-height:46px;align-items:center;justify-content:center;gap:5px;padding:0 5px;color:var(--ink);background:transparent;border:0;border-radius:8px;font-size:13px; }
+ .mobile-editor-tools button[aria-pressed=true],.mobile-editor-tools button[aria-expanded=true] { background:var(--brand-soft); }
+ .editor-reading .mobile-editor-tools { display:none; }
+ .editor-reading .rich-editor-content { cursor:text; }
+ .editor-content-shell { order:1; }
+ .tool-button { min-width:44px;min-height:44px; }
+}
+@media (max-width:360px) { .note-list { grid-template-columns:1fr; } }
+@media (max-width:760px) {
+ .notes-app.mobile-editor-open .mobile-header { display:none; }
+}
+.blank-mind-note { display:none; }
+@media (max-width:760px) {
+ .blank-mind-note { display:flex; flex:0 0 auto; align-items:center; gap:8px; width:fit-content; max-width:100%; margin:4px 0 16px; padding:10px 14px; color:var(--ink); background:var(--brand-soft); border:1px solid var(--brand-line); border-radius:12px; font-size:14px; }
+ .blank-mind-note span { font-size:12px; }
+}

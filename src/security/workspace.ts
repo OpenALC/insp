@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 import type { Attachment, Note, NoteGroup, PlatformAdapter, PlatformCapabilities } from '../domain/models'
-import { createMindMapDocument } from '../domain/mindmap.ts'
+import { createMindMapDocument, mindMapPreview, type MindMapDocument } from '../domain/mindmap.ts'
+import { isEmptyRichText } from '../domain/note-content.ts'
 import type { NativeInvoke } from '../platform/native'
 import type { CipherEnvelope, RemoteChange, SyncMutation, PushResult } from '../sync/contracts'
 import { createVault, unlockVault, encryptValue, decryptValue, encodeBase64, decodeBase64, type VaultHeader } from './crypto.ts'
@@ -121,7 +122,7 @@ export class EncryptedWorkspace implements VaultController {
             groups: copy(this.groups()),
             notes: this.notes().filter(n => !n.deletedAt && (n.privacy !== 'private' || this.state.privateVisible)).map(n => {
               const { content: _content, schemaVersion: _schema, deletedAt: _deleted, ...summary } = n
-              return copy(summary)
+              return copy({ ...summary, mindMapPreview: n.kind === 'mindmap' ? mindMapPreview(n.content as MindMapDocument) : undefined })
             }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
             dataDirectory: this.meta.dataDirectory,
           }
@@ -132,6 +133,21 @@ export class EncryptedWorkspace implements VaultController {
           const note: StoredNote = { id: crypto.randomUUID(), title: kind === 'mindmap' ? '未命名思维导图' : '未命名笔记', groupId, kind, privacy: 'normal', syncPolicy: 'sync', preview: '', createdAt: now, updatedAt: now, revision: 1, schemaVersion: 1, content: kind === 'mindmap' ? createMindMapDocument() : { type: 'doc', content: [{ type: 'paragraph' }] }, deletedAt: null }
           await this.persist([{ type: 'note', value: note }])
           return copy(note)
+        }),
+        convertToMindMap: id => this.write(async () => {
+          const previous = this.note(id)
+          if (previous.kind !== 'richtext' || !isEmptyRichText(previous.content)) {
+            throw new Error('只有空白笔记可以创建思维笔记，已有正文和图片会保留。')
+          }
+          const content = createMindMapDocument()
+          const title = previous.title === '未命名笔记' ? '未命名思维笔记' : previous.title
+          if (previous.title !== '未命名笔记') content.root.text = title
+          const next: StoredNote = {
+            ...previous, kind: 'mindmap', title, content, preview: content.root.text,
+            updatedAt: timestamp(), revision: previous.revision + 1,
+          }
+          await this.persist([{ type: 'note', value: next }])
+          return copy(next)
         }),
         saveNote: input => this.write(async () => {
           const previous = this.note(input.id)

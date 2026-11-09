@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, CornerDownRight, CornerUpLeft, Plus, Trash2 } from 'lucide-vue-next'
 import type { MindMapNode } from '../domain/mindmap'
 
@@ -27,6 +27,7 @@ const emit = defineEmits<{
   'toggle-collapse': [id: string]
 }>()
 
+const actionsOpen = ref(false)
 const rows = computed(() => Math.min(8, Math.max(2, props.node.text.split('\n').length)))
 const collapsed = computed(() => props.collapsedIds.has(props.node.id))
 
@@ -76,6 +77,7 @@ function editText(event: Event) {
     class="mindmap-outline-item"
     role="treeitem"
     :aria-level="depth + 1"
+    :style="{ '--node-depth': depth }"
     :aria-expanded="node.children.length ? !collapsed : undefined"
   >
     <div class="mindmap-outline-row" :class="{ 'mindmap-outline-row-root': depth === 0 }">
@@ -104,7 +106,8 @@ function editText(event: Event) {
         @input="editText"
       ></textarea>
 
-      <div class="mindmap-outline-actions" :aria-label="`第 ${depth + 1} 层主题操作`">
+      <button v-if="editable" type="button" class="mobile-node-menu" :aria-expanded="actionsOpen" aria-label="主题操作" @click="actionsOpen = !actionsOpen">•••</button>
+      <div v-if="editable" class="mindmap-outline-actions" :class="{ 'node-actions-open': actionsOpen }" :aria-label="`第 ${depth + 1} 层主题操作`">
         <button class="mindmap-action-button" type="button" :disabled="!editable" aria-label="添加子主题" title="添加子主题" @click="emit('add-child', node.id)"><Plus :size="14" /></button>
         <button v-if="parentId" class="mindmap-action-button" type="button" :disabled="!editable" aria-label="添加同级主题" title="添加同级主题" @click="emit('add-sibling', node.id)"><Plus :size="14" /></button>
         <button v-if="parentId" class="mindmap-action-button" type="button" :disabled="!editable || index === 0" aria-label="上移一级" title="上移一级" @click="emit('move-up', node.id)"><ArrowUp :size="14" /></button>

@@ -1,5 +1,5 @@
 import type { JSONContent } from '@tiptap/core'
-import type { MindMapDocument } from './mindmap'
+import type { MindMapDocument, MindMapPreview } from './mindmap'
 
 export type NoteContent = JSONContent | MindMapDocument
 
@@ -22,6 +22,7 @@ export interface NoteSummary {
   kind: NoteKind
   privacy: PrivacyMode
   syncPolicy: SyncPolicy
+  mindMapPreview?: MindMapPreview
   preview: string
   createdAt: string
   updatedAt: string
@@ -58,6 +59,7 @@ export interface WorkspaceRepository {
   loadWorkspace(): Promise<WorkspaceSnapshot>
   getNote(id: string): Promise<Note>
   createNote(groupId: string | null, kind?: NoteKind): Promise<Note>
+  convertToMindMap(id: string): Promise<Note>
   saveNote(input: NoteWrite): Promise<Note>
   deleteNote(id: string): Promise<void>
   createGroup(name: string): Promise<NoteGroup>

@@ -2,10 +2,12 @@
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { JSONContent } from '@tiptap/core'
 import type { Note, NoteContent, NoteGroup, NoteKind, NoteSummary, NoteWrite, PrivacyMode, SyncPolicy, WorkspaceSnapshot } from './domain/models'
-import { mindMapText, type MindMapDocument } from './domain/mindmap'
+import { mindMapPreview, mindMapText, type MindMapDocument } from './domain/mindmap'
 import { platform, registerCloseGuard, vault } from './platform'
 import VaultPanel from './components/VaultPanel.vue'
 import ThemeSelect from './components/ThemeSelect.vue'
+import MindMapCardPreview from './components/MindMapCardPreview.vue'
+import { isEmptyRichText } from './domain/note-content'
 import inspLogo from './assets/insp-logo.png'
 const RichTextEditor = defineAsyncComponent(() => import('./components/RichTextEditor.vue'))
 const MindMapEditor = defineAsyncComponent(() => import('./components/MindMapEditor.vue'))
@@ -36,7 +38,7 @@ import {
 
 type SaveState = 'saved' | 'unsaved' | 'saving' | 'error'
 type GroupDialog = { mode: 'create' } | { mode: 'rename'; groupId: string }
-type RichTextEditorHandle = { awaitPendingImports(): Promise<void> }
+type RichTextEditorHandle = { awaitPendingImports(): Promise<void>; finishEditing(): void }
 
 const snapshot = ref<WorkspaceSnapshot | null>(null)
 const activeNote = ref<Note | null>(null)
@@ -56,6 +58,38 @@ const vaultInitError = ref('')
 const draftPlainText = ref('')
 const mobilePane = ref<'list' | 'editor'>('list')
 const sidebarOpen = ref(false)
+const mobileEditing = ref(false)
+const canCreateMindNote = computed(() => activeNote.value?.kind === 'richtext' && isEmptyRichText(activeNote.value.content))
+const noteSettingsOpen = ref(false)
+const mobileLayout = ref(window.matchMedia('(max-width: 760px)').matches)
+const viewportHeight = ref(window.visualViewport?.height ?? window.innerHeight)
+let fullViewportHeight = viewportHeight.value
+let viewportWidth = window.innerWidth
+let keyboardWasOpen = false
+function updateViewport() {
+  mobileLayout.value = window.matchMedia('(max-width: 760px)').matches
+  const height = window.visualViewport?.height ?? window.innerHeight
+  if (viewportWidth !== window.innerWidth) {
+    fullViewportHeight = height
+    viewportWidth = window.innerWidth
+    keyboardWasOpen = false
+  }
+  fullViewportHeight = Math.max(fullViewportHeight, height)
+  const keyboardOpen = fullViewportHeight - height > 120
+  if (mobileLayout.value && keyboardWasOpen && !keyboardOpen && mobileEditing.value) finishMobileEditing()
+  keyboardWasOpen = keyboardOpen
+  viewportHeight.value = height
+}
+function onMindmapFocus(event: FocusEvent) {
+  if ((event.target as HTMLElement).matches('textarea')) mobileEditing.value = true
+}
+function finishMobileEditing() {
+  richEditor.value?.finishEditing()
+  ;(document.activeElement as HTMLElement | null)?.blur()
+  mobileEditing.value = false
+  void flushSaves().catch(reportError)
+}
+
 let draftVersion = 0
 let persistedVersion = 0
 let queuedVersion = 0
@@ -119,7 +153,7 @@ function documentText(node: JSONContent): string {
 
 function summaryFromNote(note: Note, plainText = note.preview): NoteSummary {
   const { content: _content, schemaVersion: _schemaVersion, ...summary } = note
-  return { ...summary, preview: plainText.trim().replace(/\s+/g, ' ').slice(0, 180) }
+  return { ...summary, mindMapPreview: note.kind === 'mindmap' ? mindMapPreview(note.content as MindMapDocument) : undefined, preview: plainText.trim().replace(/\s+/g, ' ').slice(0, 180) }
 }
 
 function replaceSummary(summary: NoteSummary) {
@@ -274,6 +308,8 @@ async function flushBeforeClose() {
 
 function resetDraftState(note: Note) {
   activeNote.value = note
+  mobileEditing.value = false
+  noteSettingsOpen.value = false
   draftPlainText.value = note.kind === 'mindmap' ? mindMapText(note.content as MindMapDocument) : documentText(note.content as JSONContent)
   draftVersion = 0
   persistedVersion = 0
@@ -586,6 +622,16 @@ async function deleteActiveNote() {
   })
 }
 
+async function createMindNoteFromBlank() {
+  const id = activeNote.value?.id
+  if (!id || !canCreateMindNote.value) return
+  await runTransition(async () => {
+    const note = await platform.repository.convertToMindMap(id)
+    replaceSummary(summaryFromNote(note))
+    resetDraftState(note)
+  })
+}
+
 function updateDocument(content: NoteContent, plainText: string) {
   if (!activeNote.value) return
   activeNote.value = { ...activeNote.value, content }
@@ -678,6 +724,9 @@ function navigateBack(event: Event) {
   } else if (sidebarOpen.value) {
     event.preventDefault()
     sidebarOpen.value = false
+  } else if (mobileLayout.value && mobileEditing.value) {
+    event.preventDefault()
+    finishMobileEditing()
   } else if (mobilePane.value === 'editor') {
     event.preventDefault()
     void showNoteList()
@@ -750,6 +799,8 @@ function formatDate(value: string) {
 }
 
 onMounted(async () => {
+  window.addEventListener('resize', updateViewport)
+  window.visualViewport?.addEventListener('resize', updateViewport)
   window.addEventListener('insp:back', navigateBack)
   window.addEventListener('online', handleOnline)
   document.addEventListener('visibilitychange', refreshRemoteWhenVisible)
@@ -777,6 +828,8 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('resize', updateViewport)
+  window.visualViewport?.removeEventListener('resize', updateViewport)
   window.removeEventListener('insp:back', navigateBack)
   window.removeEventListener('online', handleOnline)
   document.removeEventListener('visibilitychange', refreshRemoteWhenVisible)
@@ -795,7 +848,7 @@ onBeforeUnmount(() => {
     :error="vaultInitError"
     @retry="retryInitialize"
   />
-  <div v-else class="notes-app" :class="{ 'mobile-editor-open': mobilePane === 'editor', 'sidebar-open': sidebarOpen }">
+  <div v-else class="notes-app" :style="mobileLayout ? { height: viewportHeight + 'px' } : undefined" :class="{ 'mobile-editor-open': mobilePane === 'editor', 'sidebar-open': sidebarOpen, 'mobile-writing': mobileEditing, 'note-settings-open': noteSettingsOpen }">
     <header class="mobile-header">
       <button class="icon-button" type="button" aria-label="打开分组导航" @click="sidebarOpen = !sidebarOpen"><Menu :size="21" /></button>
       <strong>{{ currentFilterName }}</strong>
@@ -870,6 +923,11 @@ onBeforeUnmount(() => {
         <input v-model="searchQuery" type="search" placeholder="搜索标题和正文摘要" aria-label="搜索笔记标题和正文摘要" />
       </label>
 
+      <nav class="mobile-group-filters" aria-label="笔记分组">
+        <button :class="{ active: filterKey === 'all' }" @click="chooseFilter('all')">全部</button>
+        <button :class="{ active: filterKey === 'ungrouped' }" @click="chooseFilter('ungrouped')">未分组</button>
+        <button v-for="group in groups" :key="group.id" :class="{ active: filterKey === 'group:' + group.id }" @click="chooseFilter('group:' + group.id)">{{ group.name }}</button>
+      </nav>
       <div class="list-meta"><span>{{ searchQuery ? `找到 ${filteredNotes.length} 篇` : `${filteredNotes.length} 篇笔记` }}</span><span class="sort-label"><Clock3 :size="13" />最近编辑</span></div>
 
       <div v-if="isLoading" class="list-loading" role="status"><span class="loading-orbit"></span><span>正在打开本地笔记…</span></div>
@@ -878,7 +936,8 @@ onBeforeUnmount(() => {
           <span class="note-card-icon"><Workflow v-if="note.kind === 'mindmap'" :size="17" /><FileText v-else :size="17" /></span>
           <span class="note-card-content">
             <span class="note-card-topline"><strong>{{ note.title || '未命名笔记' }}</strong><time>{{ formatDate(note.updatedAt) }}</time></span>
-            <span class="note-preview">{{ note.preview || '还没有正文，点开继续记录。' }}</span>
+            <MindMapCardPreview v-if="note.kind === 'mindmap' && note.mindMapPreview" :preview="note.mindMapPreview" />
+            <span v-else class="note-preview">{{ note.preview || '还没有正文，点开继续记录。' }}</span>
             <span class="note-card-foot"><span v-if="note.groupId" class="note-group-tag"><Folder :size="11" />{{ groups.find((item) => item.id === note.groupId)?.name ?? '分组' }}</span><span v-else class="note-group-tag muted">未分组</span></span>
           </span>
           <ChevronRight class="note-card-chevron" :size="15" />
@@ -909,8 +968,10 @@ onBeforeUnmount(() => {
       </div>
       <template v-if="activeNote">
         <header class="editor-topbar">
-          <button class="icon-button mobile-back" type="button" aria-label="返回笔记列表" :disabled="isTransitioning" @click="showNoteList"><ArrowLeft :size="20" /></button>
+          <button class="icon-button mobile-back" type="button" :aria-label="mobileEditing ? '结束编辑' : '返回笔记列表'" :disabled="isTransitioning" @click="mobileEditing ? finishMobileEditing() : showNoteList()"><ArrowLeft :size="20" /></button>
           <div class="breadcrumb"><span>拾页</span><ChevronRight :size="14" /><span>{{ activeGroupName }}</span><ChevronRight :size="14" /><span class="breadcrumb-current">笔记</span></div>
+          <button v-if="mobileEditing" class="mobile-done" @click="finishMobileEditing">完成</button>
+          <button class="mobile-note-settings icon-button" type="button" aria-label="笔记设置" :aria-expanded="noteSettingsOpen" @click="noteSettingsOpen = !noteSettingsOpen"><Settings2 :size="20" /></button>
           <div class="editor-top-actions">
             <label class="group-picker-label" for="note-group-picker">移动到</label>
             <select id="note-group-picker" class="group-picker" :value="activeNote.groupId ?? ''" :disabled="isTransitioning" aria-label="选择笔记分组" @change="changeNoteGroup">
@@ -923,7 +984,7 @@ onBeforeUnmount(() => {
 
         <div class="document-heading">
           <div class="document-kicker"><span class="document-kind-dot"></span>{{ activeNote.kind === 'mindmap' ? '思维导图' : '随手记' }} <span class="kicker-separator">·</span> {{ formatDate(activeNote.updatedAt) }}</div>
-          <input class="document-title" :value="activeNote.title" placeholder="未命名笔记" aria-label="笔记标题" :disabled="isTransitioning" @input="updateTitle" />
+          <input class="document-title" :value="activeNote.title" placeholder="未命名笔记" aria-label="笔记标题" :disabled="isTransitioning" @focus="mobileEditing = true" @input="updateTitle" />
           <div class="note-policy-controls">
             <label class="note-policy-control">
               <span>隐私</span>
@@ -943,10 +1004,13 @@ onBeforeUnmount(() => {
           <p v-if="activeNote.privacy === 'private' && activeNote.syncPolicy === 'sync'" class="private-sync-note">此隐私笔记已明确启用同步。</p>
         </div>
 
+        <button v-if="canCreateMindNote" type="button" class="blank-mind-note" :disabled="isTransitioning" @pointerdown.prevent @click="createMindNoteFromBlank"><Workflow :size="17" />创建思维笔记<span>用层级整理想法</span></button>
         <RichTextEditor
           v-if="activeNote.kind === 'richtext'"
           :key="activeNote.id"
           ref="richEditor"
+          :reading="mobileLayout && !mobileEditing"
+          @edit="mobileEditing = true"
           :content="activeNote.content as JSONContent"
           :editable="!isTransitioning"
           @update:document="updateDocument"
@@ -954,6 +1018,7 @@ onBeforeUnmount(() => {
         />
         <MindMapEditor
           v-else
+          @focusin="onMindmapFocus"
           :key="activeNote.id"
           :content="activeNote.content as MindMapDocument"
           :editable="!isTransitioning"
