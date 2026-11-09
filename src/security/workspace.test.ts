@@ -197,6 +197,33 @@ async function editNote(instance: EncryptedWorkspace, id: string, title: string,
   return instance.platform.repository.saveNote({ id, title, groupId: previous.groupId, content: document(body), plainText: body })
 }
 
+test('sync acknowledgements keep the editor active while new remote edits still refresh it', async () => {
+  const server = new MemorySyncServer()
+  const instance = workspace(createStore(), server)
+  await instance.initialize()
+  await instance.setup(PASSWORD)
+  await instance.configureSync(ENDPOINT)
+  let before = 0
+  let after = 0
+  instance.setSyncHooks(async () => { before++ }, async () => { after++ })
+  const note = await instance.platform.repository.createNote(null)
+  await editNote(instance, note.id, 'Typing', 'Keep the keyboard open')
+  await instance.syncNow()
+  await instance.syncNow()
+  assert.deepEqual({ before, after }, { before: 0, after: 0 })
+
+  const peer = workspace(createStore(), server)
+  await peer.initialize()
+  await peer.setup(PASSWORD, instance.state.connectionCode)
+  await editNote(peer, note.id, 'Remote edit', 'Content from another device')
+  await peer.syncNow()
+  await instance.syncNow()
+  assert.deepEqual({ before, after }, { before: 1, after: 1 })
+  assert.deepEqual((await instance.platform.repository.getNote(note.id)).content, document('Content from another device'))
+  await peer.lock()
+  await instance.lock()
+})
+
 test('setup encrypts legacy notes, tombstones, and image bytes; locking blocks reads and wrong passwords', async () => {
   const deleted = legacyNote('deleted-note', 'MIGRATION_SECRET_TITLE', { deletedAt: DELETED_AT, body: 'MIGRATION_SECRET_BODY' })
   const active = legacyNote('active-note', 'ACTIVE_SECRET_TITLE', { body: 'ACTIVE_SECRET_BODY' })

@@ -629,7 +629,8 @@ export class EncryptedWorkspace implements VaultController {
 
   private async applyRemote(changes: RemoteChange[], cursor: number, epoch: number): Promise<void> {
     if (epoch !== this.epoch) return
-    if (changes.length) await this.beforeApply()
+    const hasUnappliedChanges = changes.some(change => change.revision > (this.meta.receipts[change.entityId]?.serverRevision ?? 0))
+    if (hasUnappliedChanges) await this.beforeApply()
     try {
       await this.write(async () => {
         if (epoch !== this.epoch) return
@@ -690,7 +691,7 @@ export class EncryptedWorkspace implements VaultController {
           }
         } })
       })
-    } finally { if (changes.length && epoch === this.epoch) await this.afterApply() }
+    } finally { if (hasUnappliedChanges && epoch === this.epoch) await this.afterApply() }
   }
 
   private async pull(epoch: number) {

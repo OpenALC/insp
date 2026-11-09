@@ -123,20 +123,16 @@ const mobileLayout = ref(window.matchMedia('(max-width: 760px)').matches)
 const viewportHeight = ref(window.visualViewport?.height ?? window.innerHeight)
 let fullViewportHeight = viewportHeight.value
 let viewportWidth = window.innerWidth
-let keyboardWasOpen = false
 function updateViewport() {
   mobileLayout.value = window.matchMedia('(max-width: 760px)').matches
   const height = window.visualViewport?.height ?? window.innerHeight
   if (viewportWidth !== window.innerWidth) {
     fullViewportHeight = height
     viewportWidth = window.innerWidth
-    keyboardWasOpen = false
   }
   fullViewportHeight = Math.max(fullViewportHeight, height)
   const keyboardOpen = fullViewportHeight - height > 120
-  if (mobileLayout.value && keyboardWasOpen && !keyboardOpen && mobileEditing.value) finishMobileEditing()
   keyboardVisible.value = keyboardOpen
-  keyboardWasOpen = keyboardOpen
   viewportHeight.value = height
 }
 function onMindmapFocus(event: FocusEvent) {
@@ -365,11 +361,13 @@ async function flushBeforeClose() {
   }
 }
 
-function resetDraftState(note: Note) {
+function resetDraftState(note: Note, preserveEditing = false) {
   activeNote.value = note
-  mobileEditing.value = false
-  newNoteFocus.value = false
-  noteSettingsOpen.value = false
+  if (!preserveEditing) {
+    mobileEditing.value = false
+    newNoteFocus.value = false
+    noteSettingsOpen.value = false
+  }
   draftPlainText.value = note.kind === 'mindmap' ? mindMapText(note.content as MindMapDocument) : documentText(note.content as JSONContent)
   draftVersion = 0
   persistedVersion = 0
@@ -596,7 +594,7 @@ async function afterSyncApply() {
         mobilePane.value = 'list'
         return
       }
-      resetDraftState(latest)
+      resetDraftState(latest, true)
     } catch (error) {
       clearActiveNote()
       mobilePane.value = 'list'
@@ -1021,8 +1019,8 @@ onBeforeUnmount(() => {
         </template>
       </div>
 
-      <div class="floating-compose" aria-label="创建笔记"><button class="compose-main" aria-label="新建普通笔记" :disabled="isTransitioning" @click="createNote('richtext')"><Plus :size="27" /><span>笔记</span></button><span class="compose-separator"></span><button aria-label="新建思维笔记" :disabled="isTransitioning" @click="createNote('mindmap')"><Workflow :size="24" /><span>思维笔记</span></button></div>
     </section>
+    <div class="floating-compose" aria-label="创建笔记"><button class="compose-main" aria-label="新建普通笔记" :disabled="isTransitioning" @click="createNote('richtext')"><Plus :size="27" /><span>笔记</span></button><span class="compose-separator"></span><button aria-label="新建思维笔记" :disabled="isTransitioning" @click="createNote('mindmap')"><Workflow :size="24" /><span>思维笔记</span></button></div>
 
     <main class="editor-pane">
       <div v-if="actionError && showError" class="error-banner" role="alert">

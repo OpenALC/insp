@@ -105,9 +105,6 @@ const editor = useEditor({
       return true
     },
   },
-  onCreate({ editor: currentEditor }) {
-    if (props.autofocus) currentEditor.commands.focus('end')
-  },
   onUpdate({ editor: currentEditor }) {
     emit('update:document', currentEditor.getJSON(), currentEditor.getText({ blockSeparator: '\n' }))
   },
@@ -122,10 +119,28 @@ const editor = useEditor({
   },
 })
 
+let autofocusDone = false
 watch(
-  () => [props.editable, props.reading],
-  () => editor.value?.setEditable(props.editable && !props.reading, false),
+  () => [editor.value, props.editable, props.reading, props.autofocus] as const,
+  ([currentEditor, editable, reading, autofocus]) => {
+    currentEditor?.setEditable(editable && !reading, false)
+    if (currentEditor && editable && !reading && autofocus && !autofocusDone) {
+      autofocusDone = true
+      currentEditor.commands.focus('end')
+    }
+  },
+  { flush: 'post' },
 )
+
+watch(() => props.content, content => {
+  const currentEditor = editor.value
+  if (currentEditor && JSON.stringify(currentEditor.getJSON()) !== JSON.stringify(content)) {
+    const { from, to } = currentEditor.state.selection
+    currentEditor.commands.setContent(content, { emitUpdate: false })
+    const size = currentEditor.state.doc.content.size
+    currentEditor.commands.setTextSelection({ from: Math.min(from, size), to: Math.min(to, size) })
+  }
+}, { deep: true })
 
 function openImagePicker() {
   if (!editor.value || !props.editable) return
