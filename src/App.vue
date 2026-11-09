@@ -8,7 +8,6 @@ import VaultPanel from './components/VaultPanel.vue'
 import SettingsPage from './components/SettingsPage.vue'
 import MindMapCardPreview from './components/MindMapCardPreview.vue'
 import { isEmptyRichText } from './domain/note-content'
-import inspLogo from './assets/insp-logo.png'
 const RichTextEditor = defineAsyncComponent(() => import('./components/RichTextEditor.vue'))
 const MindMapEditor = defineAsyncComponent(() => import('./components/MindMapEditor.vue'))
 import {
@@ -126,12 +125,12 @@ async function handleVisibility() {
 }
 
 const mobileLayout = ref(window.matchMedia('(max-width: 760px)').matches)
-const viewportHeight = ref(window.visualViewport?.height ?? window.innerHeight)
+const viewportHeight = ref(window.innerHeight)
 let fullViewportHeight = viewportHeight.value
 let viewportWidth = window.innerWidth
 function updateViewport() {
   mobileLayout.value = window.matchMedia('(max-width: 760px)').matches
-  const height = window.visualViewport?.height ?? window.innerHeight
+  const height = window.innerHeight
   if (viewportWidth !== window.innerWidth) {
     optionsRestingHeight.value = 0
     fullViewportHeight = height
@@ -711,11 +710,23 @@ function updateDocument(content: NoteContent, plainText: string) {
   markDraftChanged()
 }
 
-function updateTitle(event: Event) {
-  if (!activeNote.value) return
-  activeNote.value = { ...activeNote.value, title: (event.target as HTMLInputElement).value }
-  markDraftChanged()
-}
+const titlePlaceholder = computed(() => activeNote.value?.kind === 'mindmap' ? UNTITLED_MIND_MAP : '未命名笔记')
+const editorTitle = computed({
+  get: () => activeNote.value?.title === titlePlaceholder.value ? '' : activeNote.value?.title ?? '',
+  set: (text: string) => {
+    const note = activeNote.value
+    if (!note) return
+    const title = text || titlePlaceholder.value
+    if (note.kind === 'mindmap') {
+      const map = note.content as MindMapDocument
+      const next = { ...map, root: { ...map.root, text: title } }
+      updateDocument(next, mindMapText(next))
+    } else {
+      activeNote.value = { ...note, title }
+      markDraftChanged()
+    }
+  },
+})
 
 async function changeNoteGroup(event: Event) {
   const select = event.target as HTMLSelectElement
@@ -881,7 +892,6 @@ function formatDate(value: string) {
 
 onMounted(async () => {
   window.addEventListener('resize', updateViewport)
-  window.visualViewport?.addEventListener('resize', updateViewport)
   window.addEventListener('insp:back', navigateBack)
   window.addEventListener('online', handleOnline)
   document.addEventListener('visibilitychange', handleVisibility)
@@ -915,7 +925,6 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', updateViewport)
-  window.visualViewport?.removeEventListener('resize', updateViewport)
   window.removeEventListener('insp:back', navigateBack)
   window.removeEventListener('online', handleOnline)
   document.removeEventListener('visibilitychange', handleVisibility)
@@ -936,7 +945,7 @@ onBeforeUnmount(() => {
     :error="vaultInitError"
     @retry="retryInitialize"
   />
-  <div v-else class="notes-app" :style="mobileLayout ? { height: viewportHeight + 'px' } : undefined" :class="{ 'mobile-editor-open': mobilePane === 'editor', 'sidebar-open': sidebarOpen, 'mobile-writing': mobileEditing, 'note-settings-open': noteSettingsOpen, 'keyboard-open': keyboardVisible }">
+  <div v-else class="notes-app" :class="{ 'mobile-editor-open': mobilePane === 'editor', 'sidebar-open': sidebarOpen, 'mobile-writing': mobileEditing, 'note-settings-open': noteSettingsOpen, 'keyboard-open': keyboardVisible }">
     <header class="mobile-header">
       <button class="icon-button" type="button" aria-label="打开分组导航" @click="sidebarOpen = true"><Menu :size="25" /></button>
       <strong :class="{ visible: listScrolled }">{{ currentFilterName === '全部笔记' ? '笔记' : currentFilterName }}</strong>
@@ -946,8 +955,7 @@ onBeforeUnmount(() => {
     <button v-if="sidebarOpen" class="sidebar-scrim" type="button" aria-label="关闭分组导航" @click="sidebarOpen = false"></button>
     <aside class="sidebar" aria-label="笔记导航">
       <div class="brand-lockup">
-        <div class="brand-mark"><img :src="inspLogo" alt="" /></div>
-        <div class="brand-copy"><strong>拾页</strong><span>把想法，收进一页</span></div>
+        <div class="brand-copy"><strong>拾页 · Inspiration</strong><span>by OpenALC</span></div>
       </div>
 
       <div class="sidebar-section-label">笔记空间</div>
@@ -1046,7 +1054,8 @@ onBeforeUnmount(() => {
       <template v-if="activeNote">
         <header class="editor-topbar">
           <button class="icon-button mobile-back" type="button" :aria-label="mobileEditing ? '结束编辑' : '返回笔记列表'" :disabled="isTransitioning" @click="mobileEditing ? finishMobileEditing() : showNoteList()"><ArrowLeft :size="20" /></button>
-          <div class="breadcrumb"><span>拾页</span><ChevronRight :size="14" /><span>{{ activeGroupName }}</span><ChevronRight :size="14" /><span class="breadcrumb-current">笔记</span></div>
+          <input v-if="mobileLayout" v-model="editorTitle" class="topbar-note-title" :placeholder="titlePlaceholder" aria-label="笔记标题" :disabled="isTransitioning" @focus="mobileEditing = true" />
+          <div v-else class="breadcrumb"><span>拾页</span><ChevronRight :size="14" /><span>{{ activeGroupName }}</span><ChevronRight :size="14" /><span class="breadcrumb-current">笔记</span></div>
           <div v-if="mobileEditing && activeNote.kind === 'richtext'" class="mobile-history"><button class="icon-button" aria-label="撤销编辑" :disabled="!richEditor?.canUndo" @pointerdown.prevent @click="richEditor?.undo()"><Undo2 :size="22" /></button><button class="icon-button" aria-label="重做编辑" :disabled="!richEditor?.canRedo" @pointerdown.prevent @click="richEditor?.redo()"><Redo2 :size="22" /></button></div>
           <button v-if="mobileEditing" class="mobile-done" @click="finishMobileEditing">完成</button>
           <button v-if="activeNote.kind === 'mindmap'" class="icon-button mind-view-toggle" type="button" :disabled="!mindEditor" :aria-label="nextMindView === 'tree' ? '切换到思维树' : '切换到列表'" :title="nextMindView === 'tree' ? '切换到思维树' : '切换到列表'" @pointerdown.prevent @click="mindEditor?.switchView(nextMindView)"><Network v-if="nextMindView === 'tree'" :size="21" /><ListTree v-else :size="21" /></button>
@@ -1055,7 +1064,7 @@ onBeforeUnmount(() => {
 
         <div v-if="activeNote.kind === 'richtext'" class="document-heading">
           <div class="document-kicker">{{ formatDate(activeNote.updatedAt) }}<span>｜</span>{{ draftPlainText.length }} 字</div>
-          <input class="document-title" :value="activeNote.title" placeholder="未命名笔记" aria-label="笔记标题" :disabled="isTransitioning" @focus="mobileEditing = true" @input="updateTitle" />
+          <input v-if="!mobileLayout" v-model="editorTitle" class="document-title" :placeholder="titlePlaceholder" aria-label="笔记标题" :disabled="isTransitioning" @focus="mobileEditing = true" />
         </div>
 
         <button v-if="canCreateMindNote" type="button" class="blank-mind-note" :disabled="isTransitioning" @pointerdown.prevent @click="createMindNoteFromBlank"><Workflow :size="17" />创建思维笔记<span>用层级整理想法</span></button>

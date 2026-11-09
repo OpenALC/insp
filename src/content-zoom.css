@@ -1,0 +1,16 @@
+.content-zoom-viewport {
+  touch-action: pan-x pan-y;
+  overflow-anchor: none;
+  scroll-behavior: auto;
+}
+
+.content-zoom-extent {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+}
+
+.content-zoom-surface {
+  display: flow-root;
+  transform-origin: top left;
+}

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { ChevronDown, ChevronRight, Plus, RotateCcw, ZoomIn, ZoomOut } from 'lucide-vue-next'
 import type { MindMapDocument, MindMapNode } from '../domain/mindmap'
 import { mindMapText, UNTITLED_MIND_MAP } from '../domain/mindmap'
@@ -7,6 +7,7 @@ import MindMapOutlineNode from './MindMapOutlineNode.vue'
 import MindMapNodeField from './MindMapNodeField.vue'
 import MindMapNodeTools from './MindMapNodeTools.vue'
 import { changeHierarchy } from '../domain/mindmap-structure'
+import { MAX_CONTENT_ZOOM, MIN_CONTENT_ZOOM, useContentZoom } from '../content-zoom'
 import '../mindmap.css'
 
 const props = defineProps<{
@@ -48,10 +49,15 @@ function cloneDocument(document: MindMapDocument): MindMapDocument {
 const documentState = ref(cloneDocument(props.content))
 const viewMode = ref<ViewMode>('outline')
 const collapsedIds = ref(new Set<string>())
-const zoom = ref(1)
+const zoomByView = reactive({ outline: 1, tree: 1 })
+const zoom = computed({
+  get: () => zoomByView[viewMode.value],
+  set: (value: number) => { zoomByView[viewMode.value] = value },
+})
 const editorElement = ref<HTMLElement>()
 const selectedId = ref(props.content.root.id)
 const viewport = ref<HTMLElement>()
+const contentSurface = ref<HTMLElement>()
 const scrollPositions = { outline: [0, 0], tree: [0, 0] }
 let lastEmittedJson = ''
 
@@ -126,7 +132,7 @@ function finishPendingInput() {
 
 function animateLabel(target: HTMLElement, origin: DOMRect) {
   const end = target.getBoundingClientRect()
-  const scale = viewMode.value === 'tree' ? zoom.value : 1
+  const scale = zoom.value
   target.animate([{ transform: `translate(${(origin.left - end.left) / scale}px, ${(origin.top - end.top) / scale}px)` }, { transform: 'none' }], { duration: 210, easing: 'cubic-bezier(.2,.8,.2,1)' })
 }
 
@@ -299,19 +305,12 @@ const treeLayout = computed(() => {
   return { nodes, links, width, height }
 })
 
-const scaledCanvasStyle = computed(() => ({
-  width: `${treeLayout.value.width * zoom.value}px`,
-  height: `${treeLayout.value.height * zoom.value}px`,
-}))
-
-const treeCanvasStyle = computed(() => ({
-  width: `${treeLayout.value.width}px`,
-  height: `${treeLayout.value.height}px`,
-  transform: `scale(${zoom.value})`,
-}))
+const { extentStyle, surfaceStyle, setZoom } = useContentZoom(viewport, contentSurface, zoom, {
+  size: () => viewMode.value === 'tree' ? treeLayout.value : undefined,
+})
 
 function adjustZoom(delta: number) {
-  zoom.value = Math.min(1.6, Math.max(0.55, Math.round((zoom.value + delta) * 100) / 100))
+  void setZoom(Math.round((zoom.value + delta) * 100) / 100)
 }
 
 </script>
@@ -319,34 +318,38 @@ function adjustZoom(delta: number) {
 <template>
   <section ref="editorElement" class="mindmap-editor" :data-editable="editable" aria-label="思维笔记编辑器">
 
-    <div ref="viewport" v-if="viewMode === 'outline'" class="mindmap-outline-viewport">
-      <ul class="mindmap-outline-tree" role="tree" aria-label="思维笔记主题列表">
-        <MindMapOutlineNode
-          :node="documentState.root"
-          :depth="0"
-          :editable="editable"
-          :selected-id="selectedId"
-          :collapsed-ids="collapsedIds"
-          @select="selectNode"
-          @edit="updateText"
-          @command="nodeCommand"
-          @toggle-collapse="toggleCollapse"
-        />
-      </ul>
-      <button v-if="!documentState.root.children.length && editable" type="button" class="mindmap-first-topic" @click="addChild(documentState.root.id)">输入第一个分支，回车继续添加</button>
+    <div ref="viewport" v-if="viewMode === 'outline'" class="mindmap-outline-viewport content-zoom-viewport">
+      <div class="content-zoom-extent" :style="extentStyle">
+        <div ref="contentSurface" class="content-zoom-surface" :style="surfaceStyle">
+          <ul class="mindmap-outline-tree" role="tree" aria-label="思维笔记主题列表">
+            <MindMapOutlineNode
+              :node="documentState.root"
+              :depth="0"
+              :editable="editable"
+              :selected-id="selectedId"
+              :collapsed-ids="collapsedIds"
+              @select="selectNode"
+              @edit="updateText"
+              @command="nodeCommand"
+              @toggle-collapse="toggleCollapse"
+            />
+          </ul>
+          <button v-if="!documentState.root.children.length && editable" type="button" class="mindmap-first-topic" @click="addChild(documentState.root.id)">输入第一个分支，回车继续添加</button>
+        </div>
+      </div>
     </div>
 
     <template v-else>
       <div class="mindmap-tree-navigation">
         <div class="mindmap-zoom-controls" role="group" aria-label="思维树缩放">
-          <button type="button" :disabled="zoom <= 0.55" aria-label="缩小" title="缩小" @click="adjustZoom(-0.15)"><ZoomOut :size="16" /></button>
-          <button class="mindmap-zoom-reset" type="button" aria-label="恢复默认缩放" title="恢复默认缩放" @click="zoom = 1"><RotateCcw :size="13" /><span>{{ Math.round(zoom * 100) }}%</span></button>
-          <button type="button" :disabled="zoom >= 1.6" aria-label="放大" title="放大" @click="adjustZoom(0.15)"><ZoomIn :size="16" /></button>
+          <button type="button" :disabled="zoom <= MIN_CONTENT_ZOOM" aria-label="缩小" title="缩小" @click="adjustZoom(-0.15)"><ZoomOut :size="16" /></button>
+          <button class="mindmap-zoom-reset" type="button" aria-label="恢复默认缩放" title="恢复默认缩放" @click="setZoom(1)"><RotateCcw :size="13" /><span>{{ Math.round(zoom * 100) }}%</span></button>
+          <button type="button" :disabled="zoom >= MAX_CONTENT_ZOOM" aria-label="放大" title="放大" @click="adjustZoom(0.15)"><ZoomIn :size="16" /></button>
         </div>
       </div>
-      <div ref="viewport" class="mindmap-tree-viewport" role="region" aria-label="思维树画布，可上下左右滚动" tabindex="0">
-        <div class="mindmap-tree-scaled" :style="scaledCanvasStyle">
-          <div class="mindmap-tree-canvas" :style="treeCanvasStyle">
+      <div ref="viewport" class="mindmap-tree-viewport content-zoom-viewport" role="region" aria-label="思维树画布，可上下左右滚动" tabindex="0">
+        <div class="mindmap-tree-scaled content-zoom-extent" :style="extentStyle">
+          <div ref="contentSurface" class="mindmap-tree-canvas content-zoom-surface" :style="surfaceStyle">
             <svg class="mindmap-tree-links" :width="treeLayout.width" :height="treeLayout.height" aria-hidden="true">
               <path v-for="link in treeLayout.links" :key="link.id" :d="link.path" />
             </svg>

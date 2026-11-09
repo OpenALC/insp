@@ -27,6 +27,7 @@ import {
 } from 'lucide-vue-next'
 import { platform } from '../platform'
 import { AttachmentImage } from './attachment-image'
+import { useContentZoom } from '../content-zoom'
 
 const props = defineProps<{
   content: JSONContent
@@ -55,6 +56,9 @@ let imageBookmark: TrackedBookmark | undefined
 const imagePicker = ref<HTMLInputElement | null>(null)
 const transactionTick = ref(0)
 const pendingImports = new Set<Promise<void>>()
+const contentViewport = ref<HTMLElement>()
+const contentSurface = ref<HTMLElement>()
+const { extentStyle, surfaceStyle } = useContentZoom(contentViewport, contentSurface, undefined, { fillHeight: true })
 
 const editor = useEditor({
   content: props.content,
@@ -295,13 +299,28 @@ defineExpose({ awaitPendingImports, finishEditing, focusEditor, undo, redo, canU
       <button type="button" :disabled="!editable || !editor?.can().redo()" aria-label="重做" @click="run(() => editor?.chain().focus().redo().run())"><Redo2 :size="20" /></button>
     </div>
     <input ref="imagePicker" class="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-label="选择要插入的图片" @change="onImagePickerChange" @cancel="releaseImageBookmark" />
-    <EditorContent v-if="editor" :editor="editor" class="editor-content-shell" />
+    <div ref="contentViewport" class="editor-content-shell content-zoom-viewport">
+      <div class="content-zoom-extent" :style="extentStyle">
+        <div ref="contentSurface" class="content-zoom-surface" :style="surfaceStyle">
+          <EditorContent v-if="editor" :editor="editor" />
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
 <style scoped>
 .editor-surface {
   --highlight-bg: #fff0a6;
+}
+
+.editor-content-shell {
+  min-width: 0;
+  overflow: auto;
+}
+
+.content-zoom-surface :deep(.rich-editor-content) {
+  min-height: var(--content-zoom-min-height);
 }
 
 :global(:root[data-theme='dark'] .editor-surface) {

@@ -49,11 +49,9 @@
 .mindmap-editor .mindmap-zoom-controls { display: flex; align-items: center; gap: 2px; }
 .mindmap-editor .mindmap-zoom-controls button { display: inline-flex; min-width: 36px; height: 36px; align-items: center; justify-content: center; gap: 4px; padding: 0 5px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
 .mindmap-editor .mindmap-zoom-reset { font-size: 12px; font-variant-numeric: tabular-nums; }
-.mindmap-editor .mindmap-tree-viewport { position: relative; padding: 4px; border-radius: 8px; outline: none; background: var(--surface-soft); touch-action: pan-x pan-y pinch-zoom; }
+.mindmap-editor .mindmap-tree-viewport { position: relative; padding: 4px; border-radius: 8px; outline: none; background: var(--surface-soft); }
 .mindmap-editor .mindmap-tree-viewport:focus-visible { outline: 2px solid var(--brand-line); outline-offset: -2px; }
-.mindmap-editor .mindmap-tree-scaled,
-.mindmap-editor .mindmap-tree-canvas { position: relative; transform-origin: top left; }
-.mindmap-editor .mindmap-tree-scaled { overflow: hidden; }
+.mindmap-editor .mindmap-tree-canvas { position: relative; }
 .mindmap-editor .mindmap-tree-links { position: absolute; inset: 0; pointer-events: none; }
 .mindmap-editor .mindmap-tree-links path { fill: none; stroke: var(--brand-line); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .mindmap-editor .mindmap-tree-node { position: absolute; z-index: 1; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
