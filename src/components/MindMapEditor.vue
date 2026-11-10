@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, shallowRef, toRaw, watch } from 'vue'
 import { ChevronDown, ChevronRight, Plus, RotateCcw, ZoomIn, ZoomOut } from 'lucide-vue-next'
 import type { MindMapDocument, MindMapNode } from '../domain/mindmap'
 import { mindMapText, UNTITLED_MIND_MAP } from '../domain/mindmap'
@@ -46,7 +46,7 @@ function cloneDocument(document: MindMapDocument): MindMapDocument {
   return { type: 'mindmap', root: cloneNode(document.root) }
 }
 
-const documentState = ref(cloneDocument(props.content))
+const documentState = shallowRef(cloneDocument(props.content))
 const viewMode = ref<ViewMode>('outline')
 const collapsedIds = ref(new Set<string>())
 const zoomByView = reactive({ outline: 1, tree: 1 })
@@ -59,26 +59,21 @@ const selectedId = ref(props.content.root.id)
 const viewport = ref<HTMLElement>()
 const contentSurface = ref<HTMLElement>()
 const scrollPositions = { outline: [0, 0], tree: [0, 0] }
-let lastEmittedJson = ''
+let lastEmittedDocument: MindMapDocument | undefined
 
 watch(
   () => props.content,
   (content) => {
-    const incomingJson = JSON.stringify(content)
-    if (incomingJson === lastEmittedJson) {
-      lastEmittedJson = ''
-      return
-    }
-    lastEmittedJson = ''
+    if (toRaw(content) === lastEmittedDocument) { lastEmittedDocument = undefined; return }
+    lastEmittedDocument = undefined
     documentState.value = cloneDocument(content)
     if (!findNode(content.root, selectedId.value)) selectedId.value = content.root.id
   },
-  { deep: true },
 )
 
 function publish(document: MindMapDocument) {
   documentState.value = document
-  lastEmittedJson = JSON.stringify(document)
+  lastEmittedDocument = document
   emit('update:document', document, mindMapText(document))
 }
 
@@ -161,11 +156,13 @@ async function switchView(mode: ViewMode) {
 }
 
 function updateText(id: string, text: string) {
-  const next = cloneDocument(documentState.value)
-  const target = findNode(next.root, id)
-  if (!target) return
-  target.node.text = text
-  publish(next)
+  const replace = (node: MindMapNode): MindMapNode => {
+    if (node.id === id) return { ...node, text }
+    const children = node.children.map(replace)
+    return children.some((child, index) => child !== node.children[index]) ? { ...node, children } : node
+  }
+  const root = replace(documentState.value.root)
+  if (root !== documentState.value.root) publish({ type: 'mindmap', root })
 }
 
 function addChild(id: string) {

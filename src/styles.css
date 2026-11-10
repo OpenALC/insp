@@ -2,7 +2,7 @@
   font-family: 'DM Sans', 'Noto Sans SC', 'Microsoft YaHei UI', sans-serif;
   color: var(--ink);
   background: var(--app-bg);
-  font-synthesis: none;
+  font-synthesis: style;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -266,6 +266,7 @@ button:disabled { cursor: not-allowed; }
 .rich-editor-content h2 { margin: 19px 0 10px; font-size: 18px; }
 .rich-editor-content h3 { margin: 17px 0 8px; font-size: 15px; }
 .rich-editor-content strong { color: var(--ink); font-weight: 650; }
+.rich-editor-content em, .rich-editor-content i { font-style: italic; }
 .rich-editor-content a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--brand-strong); text-underline-offset: 3px; }
 .rich-editor-content a:hover { color: var(--ink); }
 .rich-editor-content ul, .rich-editor-content ol { margin: 0 0 15px; padding-left: 1.55em; }
@@ -277,7 +278,13 @@ button:disabled { cursor: not-allowed; }
 .rich-editor-content li[data-type='taskItem'] > label input { width: 14px; height: 14px; accent-color: var(--brand-strong); cursor: pointer; }
 .rich-editor-content li[data-type='taskItem'] > div { min-width: 0; flex: 1; }
 .rich-editor-content li[data-type='taskItem'][data-checked='true'] > div { color: var(--ink); text-decoration: line-through; }
-.rich-editor-content blockquote { margin: 16px 0; padding: 3px 0 3px 15px; color: var(--ink); border-left: 2px solid var(--brand); }
+.rich-editor-content blockquote { position: relative; margin: 18px 0; padding: 14px 18px 12px 28px; color: var(--ink); border-left: 3px solid var(--brand); border-radius: 0 12px 12px 0; background: var(--surface-soft); font-style: italic; line-height: 1.85; }
+.rich-editor-content blockquote::before { position: absolute; top: 8px; left: 9px; color: var(--brand-strong); content: '“'; font-size: 24px; font-style: normal; line-height: 1; }
+.rich-editor-content blockquote p:last-child { margin-bottom: 0; }
+.rich-editor-content [data-indent='1'] { margin-left: 1.75em; }
+.rich-editor-content [data-indent='2'] { margin-left: 3.5em; }
+.rich-editor-content [data-indent='3'] { margin-left: 5.25em; }
+.rich-editor-content [data-indent='4'] { margin-left: 7em; }
 .rich-editor-content code { padding: 2px 5px; color: var(--ink); border-radius: 4px; background: var(--code-bg); font-family: 'Cascadia Code', Consolas, monospace; font-size: max(12px, .9em); }
 .rich-editor-content pre { overflow-x: auto; margin: 15px 0; padding: 14px 16px; color: var(--ink); border-radius: 9px; background: var(--code-bg); line-height: 1.65; }
 .rich-editor-content pre code { padding: 0; color: var(--ink); background: none; }

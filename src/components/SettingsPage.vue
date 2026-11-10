@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import appInfo from '../../package.json'
 import type { VaultController } from '../security/types'
 import ThemeSelect from './ThemeSelect.vue'
-import { ArrowLeft, ChevronRight, Cloud, Copy, Fingerprint, LockKeyhole, ShieldCheck } from 'lucide-vue-next'
-const props = defineProps<{ vault: VaultController; layout: string }>()
-const emit = defineEmits<{ close: []; privacy: []; sync: []; joined: []; layout: [value: string] }>()
-const view = ref<'main' | 'sync' | 'privacy' | 'devices'>('main')
-const pageTitle = computed(() => ({ main: '设置', sync: '跨端同步', privacy: '隐私设置', devices: '连接已有空间' })[view.value])
+import { ArrowLeft, ChevronRight, Cloud, Copy, Download, Fingerprint, Github, Info, LockKeyhole, ShieldCheck } from 'lucide-vue-next'
+const props = defineProps<{ vault: VaultController; layout: string; importStatus?: string }>()
+const emit = defineEmits<{ close: []; privacy: []; sync: []; joined: []; layout: [value: string]; import: [files: File[]] }>()
+const view = ref<'main' | 'sync' | 'privacy' | 'devices' | 'about' | 'import'>('main')
+const pageTitle = computed(() => ({ main: '设置', sync: '跨端同步', privacy: '隐私设置', devices: '连接已有空间', about: '关于拾页', import: '导入笔记' })[view.value])
 function back() { if (view.value === 'main') emit('close'); else view.value = 'main' }
 const endpoint = ref(props.vault.state.endpoint)
 const connection = ref('')
@@ -16,6 +17,29 @@ const confirmPassword = ref('')
 const error = ref('')
 const busy = ref(false)
 const copied = ref(false)
+const importPicker = ref<HTMLInputElement>()
+const releaseVersion = ref('')
+const updateStatus = ref('')
+const checkingUpdate = ref(false)
+async function checkUpdate() {
+  checkingUpdate.value = true
+  updateStatus.value = ''
+  try {
+    const response = await fetch('https://api.github.com/repos/OpenALC/insp/releases/latest', { headers: { Accept: 'application/vnd.github+json' } })
+    if (response.status === 404) { updateStatus.value = '尚未发布正式版本'; return }
+    if (!response.ok) throw new Error(`检查失败（HTTP ${response.status}）`)
+    const release = await response.json() as { tag_name: string }
+    releaseVersion.value = release.tag_name
+    updateStatus.value = release.tag_name.replace(/^v/, '') === appInfo.version ? '已是最新版本' : '发现新版本，可前往 GitHub 下载'
+  } catch (error) { updateStatus.value = error instanceof Error ? error.message : '暂时无法检查更新' }
+  finally { checkingUpdate.value = false }
+}
+function pickImport(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  if (files.length) emit('import', files)
+  input.value = ''
+}
 async function action(work: () => Promise<void>) {
   busy.value = true
   error.value = ''
@@ -47,7 +71,30 @@ async function copy() {
           <button class="settings-row" @click="view = 'sync'"><Cloud :size="20" /><span>跨端同步</span><span class="settings-value">{{ vault.state.syncing ? '正在同步' : vault.state.endpoint ? '已配置' : '未配置' }}</span><ChevronRight :size="17" /></button>
           <button class="settings-row" @click="view = 'devices'"><Copy :size="20" /><span>连接已有空间</span><ChevronRight :size="17" /></button>
         </div>
+        <h2>数据</h2>
+        <div class="settings-section"><button class="settings-row" @click="view = 'import'"><Download :size="20" /><span>导入笔记</span><ChevronRight :size="17" /></button></div>
+        <h2>其他</h2>
+        <div class="settings-section"><button class="settings-row" @click="view = 'about'"><Info :size="20" /><span>关于拾页</span><ChevronRight :size="17" /></button></div>
         <div class="settings-about"><strong>拾页</strong><span>给想法，留一页空白。</span><small>OpenALC · MIT</small></div>
+      </template>
+      <template v-else-if="view === 'about'">
+        <div class="settings-about settings-about-detail"><strong>拾页 · Inspiration</strong><span>给想法，留一页空白。</span><small>by OpenALC</small></div>
+        <h2>应用信息</h2>
+        <div class="settings-section">
+          <div class="settings-row"><span>当前版本</span><span class="settings-value">v{{ appInfo.version }}</span></div>
+          <button class="settings-row" :disabled="checkingUpdate" @click="checkUpdate"><Download :size="20" /><span>{{ checkingUpdate ? '正在检查…' : '获取更新' }}</span><span v-if="releaseVersion" class="settings-value">{{ releaseVersion }}</span><ChevronRight :size="17" /></button>
+          <a class="settings-row" href="https://github.com/OpenALC/insp" target="_blank" rel="noopener noreferrer"><Github :size="20" /><span>GitHub 仓库</span><span class="settings-value">github.com/OpenALC/insp</span><ChevronRight :size="17" /></a>
+          <a class="settings-row" href="https://github.com/OpenALC/insp/blob/main/LICENSE" target="_blank" rel="noopener noreferrer"><ShieldCheck :size="20" /><span>开源协议</span><span class="settings-value">MIT</span><ChevronRight :size="17" /></a>
+        </div>
+        <p v-if="updateStatus" class="settings-page-description" role="status">{{ updateStatus }}</p>
+        <p class="settings-page-description">拾页基于 Vue、Tiptap、Tauri 等开源项目构建，完整源码、许可证及更新记录请见 GitHub 仓库。</p>
+      </template>
+      <template v-else-if="view === 'import'">
+        <p class="settings-page-description">选择 Markdown、纯文本、小米笔记“导出为副本”的 ZIP，或图片。笔记和图片会加入本机加密空间。</p>
+        <div class="settings-section"><button class="settings-row" @click="importPicker?.click()"><Download :size="20" /><span>选择文件</span><span class="settings-value">可多选</span><ChevronRight :size="17" /></button></div>
+        <input ref="importPicker" class="visually-hidden" type="file" accept=".md,.markdown,.txt,.zip,image/png,image/jpeg,image/gif,image/webp,text/plain,text/markdown,application/zip" multiple aria-label="选择要导入的笔记" @change="pickImport" />
+        <p v-if="importStatus" class="settings-page-description" role="status">{{ importStatus }}</p>
+        <p class="settings-page-description">小米灵感笔记若仅能导出为图片，可作为图片保留，无法恢复可编辑的节点层级。</p>
       </template>
       <template v-else-if="view === 'privacy'">
         <p class="settings-page-description">普通笔记直接打开。只有进入隐私笔记时，才会要求你验证身份。</p>
@@ -73,7 +120,7 @@ async function copy() {
         </div>
         <p v-if="vault.state.syncError" class="vault-error">{{ vault.state.syncError }}</p>
       </template>
-      <template v-else>
+      <template v-else-if="view === 'devices'">
         <p class="settings-page-description">粘贴另一台设备的连接码，即可加入同一个空间。当前空间必须完全空白，已有笔记不会被覆盖。</p>
         <form class="settings-section settings-inline-form settings-form-spaced" @submit.prevent="join"><textarea v-model="connection" placeholder="设备连接码" aria-label="设备连接码" required></textarea><input v-model="legacyPassword" type="password" autocomplete="current-password" placeholder="旧连接码需输入原空间口令" aria-label="旧空间口令" /><button class="action-secondary" :disabled="busy || !connection.trim()">连接</button></form>
       </template>

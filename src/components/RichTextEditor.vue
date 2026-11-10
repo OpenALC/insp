@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, toRaw, watch } from 'vue'
 import { Mark, type JSONContent } from '@tiptap/core'
 import { EditorContent, useEditor } from '@tiptap/vue-3'
 import { TextSelection, type SelectionBookmark } from '@tiptap/pm/state'
@@ -7,11 +7,18 @@ import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
+import TextAlign from '@tiptap/extension-text-align'
 import {
   Bold,
   Heading1,
   Heading2,
   Heading3,
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  IndentIncrease,
+  IndentDecrease,
+  Minus,
   Highlighter,
   ImagePlus,
   Italic,
@@ -28,6 +35,7 @@ import {
 import { platform } from '../platform'
 import { AttachmentImage } from './attachment-image'
 import { useContentZoom } from '../content-zoom'
+import { ParagraphLayout } from './paragraph-layout'
 
 const props = defineProps<{
   content: JSONContent
@@ -51,10 +59,16 @@ const Highlight = Mark.create({
 type TrackedBookmark = { selection: SelectionBookmark }
 
 const formatOpen = ref(false)
+const linkOpen = ref(false)
+const linkHref = ref('')
+const linkText = ref('')
+const linkExisting = ref(false)
 const bookmarks = new Set<TrackedBookmark>()
 let imageBookmark: TrackedBookmark | undefined
+let linkBookmark: TrackedBookmark | undefined
 const imagePicker = ref<HTMLInputElement | null>(null)
 const transactionTick = ref(0)
+let lastEmittedContent: JSONContent | undefined
 const pendingImports = new Set<Promise<void>>()
 const contentViewport = ref<HTMLElement>()
 const contentSurface = ref<HTMLElement>()
@@ -68,6 +82,8 @@ const editor = useEditor({
     Placeholder.configure({ placeholder: '从这里开始记录……' }),
     TaskList,
     TaskItem.configure({ nested: true }),
+    TextAlign.configure({ types: ['paragraph', 'heading'] }),
+    ParagraphLayout,
     AttachmentImage,
     Highlight,
   ],
@@ -110,7 +126,8 @@ const editor = useEditor({
     },
   },
   onUpdate({ editor: currentEditor }) {
-    emit('update:document', currentEditor.getJSON(), currentEditor.getText({ blockSeparator: '\n' }))
+    lastEmittedContent = currentEditor.getJSON()
+    emit('update:document', lastEmittedContent, currentEditor.getText({ blockSeparator: '\n' }))
   },
   onTransaction({ transaction, appendedTransactions }) {
     for (const change of [transaction, ...appendedTransactions]) {
@@ -138,13 +155,14 @@ watch(
 
 watch(() => props.content, content => {
   const currentEditor = editor.value
-  if (currentEditor && JSON.stringify(currentEditor.getJSON()) !== JSON.stringify(content)) {
+  if (toRaw(content) === lastEmittedContent) { lastEmittedContent = undefined; return }
+  if (currentEditor) {
     const { from, to } = currentEditor.state.selection
     currentEditor.commands.setContent(content, { emitUpdate: false })
     const size = currentEditor.state.doc.content.size
     currentEditor.commands.setTextSelection({ from: Math.min(from, size), to: Math.min(to, size) })
   }
-}, { deep: true })
+})
 
 function openImagePicker() {
   if (!editor.value || !props.editable) return
@@ -223,20 +241,65 @@ function run(command: () => void) {
   if (editor.value && props.editable) command()
 }
 
-function setLink() {
-  const currentHref = editor.value?.getAttributes('link').href as string | undefined
-  const href = window.prompt('输入链接地址', currentHref ?? 'https://')
-  if (href === null || !editor.value) return
-  if (href.trim() === '') {
-    editor.value.chain().focus().unsetLink().run()
-    return
-  }
-  editor.value.chain().focus().setLink({ href: href.trim() }).run()
+function openLinkDialog() {
+  const current = editor.value
+  if (!current) return
+  linkExisting.value = current.isActive('link')
+  if (linkExisting.value && current.state.selection.empty) current.commands.extendMarkRange('link')
+  linkBookmark = trackBookmark(current.state.selection.getBookmark())
+  const { from, to } = current.state.selection
+  linkText.value = current.state.doc.textBetween(from, to)
+  linkHref.value = (current.getAttributes('link').href as string | undefined) ?? 'https://'
+  linkOpen.value = true
+}
+
+function closeLinkDialog() {
+  linkOpen.value = false
+  if (linkBookmark) bookmarks.delete(linkBookmark)
+  linkBookmark = undefined
+}
+
+function applyLink() {
+  const current = editor.value
+  if (!current || !linkBookmark) return
+  const href = linkHref.value.trim()
+  const selection = linkBookmark.selection.resolve(current.state.doc)
+  const chain = current.chain().focus().setTextSelection({ from: selection.from, to: selection.to })
+  if (href) {
+    if (selection.empty) chain.insertContent({ type: 'text', text: linkText.value || href, marks: [{ type: 'link', attrs: { href } }] }).run()
+    else chain.setLink({ href }).run()
+  } else if (!selection.empty) chain.unsetLink().run()
+  closeLinkDialog()
+}
+
+function removeLink() {
+  const current = editor.value
+  if (!current || !linkBookmark) return
+  const selection = linkBookmark.selection.resolve(current.state.doc)
+  current.chain().focus().setTextSelection({ from: selection.from, to: selection.to }).unsetLink().run()
+  closeLinkDialog()
 }
 
 function isActive(name: string, attributes?: Record<string, unknown>) {
   void transactionTick.value
   return editor.value?.isActive(name, attributes) ?? false
+}
+function adjustIndent(delta: number) {
+  const current = editor.value
+  if (!current) return
+  if (current.isActive('listItem')) {
+    if (delta > 0) current.chain().focus().sinkListItem('listItem').run()
+    else current.chain().focus().liftListItem('listItem').run()
+    return
+  }
+  if (current.isActive('taskItem')) {
+    if (delta > 0) current.chain().focus().sinkListItem('taskItem').run()
+    else current.chain().focus().liftListItem('taskItem').run()
+    return
+  }
+  const type = current.isActive('heading') ? 'heading' : 'paragraph'
+  const indent = Math.max(0, Math.min(4, Number(current.getAttributes(type).indent || 0) + delta))
+  current.chain().focus().updateAttributes(type, { indent }).run()
 }
 
 function finishEditing() {
@@ -279,10 +342,19 @@ defineExpose({ awaitPendingImports, finishEditing, focusEditor, undo, redo, canU
         <button type="button" class="tool-button" :class="{ active: isActive('orderedList') }" aria-label="有序列表" title="有序列表" :disabled="!editable" @mousedown.prevent @click="run(() => editor?.chain().focus().toggleOrderedList().run())"><ListOrdered :size="18" /></button>
         <button type="button" class="tool-button" :class="{ active: isActive('taskList') }" aria-label="待办列表" title="待办列表" :disabled="!editable" @mousedown.prevent @click="run(() => editor?.chain().focus().toggleTaskList().run())"><ListTodo :size="18" /></button>
         <button type="button" class="tool-button" :class="{ active: isActive('blockquote') }" aria-label="引用" title="引用" :disabled="!editable" @mousedown.prevent @click="run(() => editor?.chain().focus().toggleBlockquote().run())"><Quote :size="17" /></button>
+        <button type="button" class="tool-button" aria-label="分割线" title="分割线" :disabled="!editable" @mousedown.prevent @click="run(() => editor?.chain().focus().setHorizontalRule().run())"><Minus :size="18" /></button>
       </div>
       <span class="toolbar-divider format-commands" aria-hidden="true"></span>
       <div class="toolbar-group format-commands">
-        <button type="button" class="tool-button" :class="{ active: isActive('link') }" aria-label="插入链接" title="插入链接" :disabled="!editable" @mousedown.prevent @click="setLink"><Link :size="17" /></button>
+        <button type="button" class="tool-button" :class="{ active: isActive('paragraph', { textAlign: 'left' }) }" aria-label="左对齐" title="左对齐" :disabled="!editable" @mousedown.prevent @click="run(() => editor?.chain().focus().setTextAlign('left').run())"><AlignLeft :size="18" /></button>
+        <button type="button" class="tool-button" :class="{ active: isActive('paragraph', { textAlign: 'center' }) }" aria-label="居中" title="居中" :disabled="!editable" @mousedown.prevent @click="run(() => editor?.chain().focus().setTextAlign('center').run())"><AlignCenter :size="18" /></button>
+        <button type="button" class="tool-button" :class="{ active: isActive('paragraph', { textAlign: 'right' }) }" aria-label="右对齐" title="右对齐" :disabled="!editable" @mousedown.prevent @click="run(() => editor?.chain().focus().setTextAlign('right').run())"><AlignRight :size="18" /></button>
+        <button type="button" class="tool-button" aria-label="增加缩进" title="增加缩进" :disabled="!editable" @mousedown.prevent @click="adjustIndent(1)"><IndentIncrease :size="18" /></button>
+        <button type="button" class="tool-button" aria-label="减少缩进" title="减少缩进" :disabled="!editable" @mousedown.prevent @click="adjustIndent(-1)"><IndentDecrease :size="18" /></button>
+      </div>
+      <span class="toolbar-divider format-commands" aria-hidden="true"></span>
+      <div class="toolbar-group format-commands">
+        <button type="button" class="tool-button" :class="{ active: isActive('link') }" aria-label="插入链接" title="插入链接" :disabled="!editable" @mousedown.prevent @click="openLinkDialog"><Link :size="17" /></button>
         <button type="button" class="tool-button" aria-label="插入图片" title="插入图片" :disabled="!editable" @mousedown.prevent @click="openImagePicker"><ImagePlus :size="18" /></button>
       </div>
       <span class="toolbar-spacer format-commands"></span>
@@ -299,6 +371,16 @@ defineExpose({ awaitPendingImports, finishEditing, focusEditor, undo, redo, canU
       <button type="button" :disabled="!editable || !editor?.can().redo()" aria-label="重做" @click="run(() => editor?.chain().focus().redo().run())"><Redo2 :size="20" /></button>
     </div>
     <input ref="imagePicker" class="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-label="选择要插入的图片" @change="onImagePickerChange" @cancel="releaseImageBookmark" />
+    <Teleport to="body">
+      <div v-if="linkOpen" class="link-dialog-backdrop" @click.self="closeLinkDialog">
+        <form class="link-dialog" role="dialog" aria-modal="true" aria-label="插入链接" @submit.prevent="applyLink">
+          <div class="link-dialog-heading"><span class="link-dialog-icon"><Link :size="20" /></span><div><h2>插入链接</h2><p>为选中的文字添加网页地址</p></div></div>
+          <label v-if="!linkText" class="link-dialog-field">显示文字<input v-model="linkText" type="text" placeholder="链接文字" /></label>
+          <label class="link-dialog-field">链接地址<input v-model="linkHref" type="url" placeholder="https://example.com" required autofocus /></label>
+          <div class="link-dialog-actions"><button v-if="linkExisting" class="link-dialog-remove" type="button" @click="removeLink">移除链接</button><button type="button" @click="closeLinkDialog">取消</button><button class="link-dialog-primary" type="submit">完成</button></div>
+        </form>
+      </div>
+    </Teleport>
     <div ref="contentViewport" class="editor-content-shell content-zoom-viewport">
       <div class="content-zoom-extent" :style="extentStyle">
         <div ref="contentSurface" class="content-zoom-surface" :style="surfaceStyle">
@@ -334,4 +416,20 @@ defineExpose({ awaitPendingImports, finishEditing, focusEditor, undo, redo, canU
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
+</style>
+
+<style>
+.link-dialog-backdrop { position: fixed; z-index: 200; inset: 0; display: grid; place-items: center; padding: 24px; background: var(--overlay); animation: veil-in .2s ease both; }
+.link-dialog { width: min(100%, 400px); padding: 24px; border: 1px solid var(--line); border-radius: 24px; color: var(--ink); background: var(--paper); box-shadow: 0 24px 70px rgba(var(--shadow-rgb), .2); animation: dialog-in .25s var(--motion-out) both; }
+.link-dialog-heading { display: flex; align-items: center; gap: 13px; margin-bottom: 24px; }
+.link-dialog-icon { display: grid; width: 44px; height: 44px; flex: 0 0 auto; place-items: center; border-radius: 15px; background: var(--brand-soft); }
+.link-dialog h2 { margin: 0; font-size: 19px; }
+.link-dialog p { margin: 4px 0 0; font-size: 12px; opacity: .65; }
+.link-dialog-field { display: grid; gap: 9px; margin: 14px 0; font-size: 13px; }
+.link-dialog-field input { width: 100%; min-height: 48px; padding: 0 14px; border: 1px solid var(--line); border-radius: 13px; outline: none; color: var(--ink); background: var(--surface-soft); font: inherit; font-size: 15px; }
+.link-dialog-field input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(var(--brand-rgb), .12); }
+.link-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+.link-dialog-actions button { min-width: 78px; min-height: 42px; border: 0; border-radius: 13px; color: var(--ink); background: var(--surface-soft); }
+.link-dialog-actions .link-dialog-remove { margin-right: auto; color: var(--danger); background: transparent; }
+.link-dialog-actions .link-dialog-primary { background: var(--brand-soft); font-weight: 600; }
 </style>

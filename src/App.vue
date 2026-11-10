@@ -83,12 +83,25 @@ const vaultInitError = ref('')
 const draftPlainText = ref('')
 const mobilePane = ref<'list' | 'editor'>('list')
 const sidebarOpen = ref(false)
+const noteRevealStyle = ref<Record<string, string>>({})
+function setNoteRevealOrigin(id: string) {
+  const card = Array.from(document.querySelectorAll<HTMLElement>('.note-card')).find(item => item.dataset.noteId === id)
+  if (!card) return
+  const rect = card.getBoundingClientRect()
+  noteRevealStyle.value = {
+    '--note-origin-top': `${Math.max(0, rect.top)}px`,
+    '--note-origin-right': `${Math.max(0, innerWidth - rect.right)}px`,
+    '--note-origin-bottom': `${Math.max(0, innerHeight - rect.bottom)}px`,
+    '--note-origin-left': `${Math.max(0, rect.left)}px`,
+  }
+}
 const mobileEditing = ref(false)
 const canCreateMindNote = computed(() => activeNote.value?.kind === 'richtext' && isEmptyRichText(activeNote.value.content))
 const noteSettingsOpen = ref(false)
 const optionsPanel = ref<HTMLElement>()
 const optionsRestingHeight = ref(0)
 const settingsOpen = ref(false)
+const importStatus = ref('')
 const settingsPrivacy = ref(false)
 const listLayout = ref(localStorage.getItem('insp.noteLayout') === 'list' ? 'list' : 'grid')
 const listScrolled = ref(false)
@@ -502,17 +515,13 @@ function enqueueSave(input: NoteWrite, version: number): Promise<void> {
 function markDraftChanged() {
   draftVersion += 1
   saveState.value = 'unsaved'
-  if (activeNote.value) {
-    const current = { ...activeNote.value, updatedAt: new Date().toISOString() }
-    activeNote.value = current
-    replaceSummary(summaryFromNote(current, draftPlainText.value))
-  }
+  if (activeNote.value) activeNote.value.updatedAt = new Date().toISOString()
   if (saveTimer !== undefined) clearTimeout(saveTimer)
   saveTimer = setTimeout(() => {
     saveTimer = undefined
     const current = activeNote.value
     if (current) void enqueueSave(captureWrite(current), draftVersion).catch(() => undefined)
-  }, platform.capabilities.platform === 'windows' ? 450 : 150)
+  }, 700)
 }
 
 async function flushSaves() {
@@ -862,6 +871,7 @@ async function openNote(noteId: string) {
     mobilePane.value = 'editor'
     return
   }
+  if (mobileLayout.value) setNoteRevealOrigin(noteId)
   await runTransition(async () => {
     const summary = snapshot.value?.notes.find((item) => item.id === noteId)
     if (!summary || summary.privacy !== (filterKey.value === 'private' ? 'private' : 'normal')) return
@@ -888,6 +898,23 @@ async function createNote(kind: NoteKind = 'richtext') {
     newNoteFocus.value = mobileEditing.value
     mobilePane.value = 'editor'
   })
+}
+
+async function importNotes(files: File[]) {
+  importStatus.value = '正在导入…'
+  const { readImportedNotes } = await import('./import/notes')
+  let count = 0
+  const completed = await runTransition(async () => {
+    for (const file of files) {
+      for (const imported of await readImportedNotes(file, async image => (await platform.attachments.importImage(image)).id)) {
+        const note = await platform.repository.createNote(null, 'richtext')
+        const saved = await platform.repository.saveNote({ id: note.id, title: imported.title, groupId: null, content: imported.content, plainText: imported.plainText })
+        if (snapshot.value) snapshot.value = { ...snapshot.value, notes: [summaryFromNote(saved), ...snapshot.value.notes] }
+        count += 1
+      }
+    }
+  })
+  importStatus.value = completed ? `已导入 ${count} 篇笔记` : `已导入 ${count} 篇；其余文件未能导入`
 }
 
 async function deleteActiveNote() {
@@ -923,8 +950,9 @@ function updateDocument(content: NoteContent, plainText: string) {
   if (!activeNote.value) return
   if (activeNote.value.kind === 'mindmap') {
     const map = content as MindMapDocument
-    content = { ...map, root: { ...map.root, text: mindNoteTitle(map.root.text) } }
-    plainText = mindMapText(content as MindMapDocument)
+    const title = mindNoteTitle(map.root.text)
+    content = title === map.root.text ? map : { ...map, root: { ...map.root, text: title } }
+    if (content !== map) plainText = mindMapText(content as MindMapDocument)
   }
   const title = activeNote.value.kind === 'mindmap' ? (content as MindMapDocument).root.text : activeNote.value.title
   activeNote.value = { ...activeNote.value, title, content }
@@ -1034,6 +1062,7 @@ function chooseFilter(key: string) {
 }
 
 async function showNoteList() {
+  if (activeNote.value && mobileLayout.value) setNoteRevealOrigin(activeNote.value.id)
   await runTransition(async () => { mobilePane.value = 'list'; noteSettingsOpen.value = false })
 }
 
@@ -1211,9 +1240,10 @@ onBeforeUnmount(() => {
         <button class="icon-button" aria-label="更多操作" @click="listMenuOpen = true"><MoreHorizontal :size="25" /></button>
       </template>
     </header>
-    <button v-if="sidebarOpen" class="sidebar-scrim" type="button" aria-label="关闭分组导航" @click="sidebarOpen = false"></button>
+    <button class="sidebar-scrim" type="button" aria-label="关闭分组导航" :aria-hidden="!sidebarOpen" :tabindex="sidebarOpen ? 0 : -1" @click="sidebarOpen = false"></button>
     <aside class="sidebar" aria-label="笔记导航">
       <div class="brand-lockup">
+        <button class="tablet-sidebar-close icon-button" aria-label="收起侧边栏" @click="sidebarOpen = false"><Menu :size="20" /></button>
         <div class="brand-copy"><strong>拾页 · Inspiration</strong><span>by OpenALC</span></div>
       </div>
 
@@ -1252,6 +1282,7 @@ onBeforeUnmount(() => {
 
     <section class="note-list-pane" :class="{ 'layout-list': listLayout === 'list' }" aria-label="笔记列表" @scroll="onListScroll" @touchstart.passive="onHomeTouchStart" @touchmove="onHomeTouchMove" @touchend="onHomeTouchEnd" @touchcancel="groupSwipe = undefined" @click.capture="onHomeClick">
       <header class="list-pane-header">
+        <button class="tablet-sidebar-toggle icon-button" aria-label="展开侧边栏" @click="sidebarOpen = true"><Menu :size="22" /></button>
         <div>
           <div class="eyebrow">拾页 / NOTES</div>
           <h1>{{ currentFilterName === '全部笔记' ? '笔记' : currentFilterName }}</h1>
@@ -1274,7 +1305,7 @@ onBeforeUnmount(() => {
 
       <div v-if="isLoading" class="list-loading" role="status"><span class="loading-orbit"></span><span>正在打开本地笔记…</span></div>
       <div v-else-if="filteredNotes.length" class="note-list">
-        <button v-for="note in filteredNotes" :key="note.id" class="note-card" :class="{ selected: !selectionMode && activeNote?.id === note.id, 'multi-selected': selectedNoteIds.has(note.id) }" :aria-pressed="selectionMode ? selectedNoteIds.has(note.id) : undefined" :disabled="isTransitioning" @pointerdown="notePointerDown($event, note.id)" @pointermove="notePointerMove" @pointerup="notePointerEnd" @pointercancel="notePointerEnd" @contextmenu="noteContextMenu($event, note.id)" @click="noteCardClick(note.id)">
+        <button v-for="note in filteredNotes" :key="note.id" class="note-card" :data-note-id="note.id" :class="{ selected: !selectionMode && activeNote?.id === note.id, 'multi-selected': selectedNoteIds.has(note.id) }" :aria-pressed="selectionMode ? selectedNoteIds.has(note.id) : undefined" :disabled="isTransitioning" @pointerdown="notePointerDown($event, note.id)" @pointermove="notePointerMove" @pointerup="notePointerEnd" @pointercancel="notePointerEnd" @contextmenu="noteContextMenu($event, note.id)" @click="noteCardClick(note.id)">
           <span v-if="selectionMode" class="note-selection-mark"><Check v-if="selectedNoteIds.has(note.id)" :size="16" /></span>
           <span class="note-card-icon"><Workflow v-if="note.kind === 'mindmap'" :size="17" /><FileText v-else :size="17" /></span>
           <span class="note-card-content">
@@ -1304,7 +1335,7 @@ onBeforeUnmount(() => {
     <div class="floating-compose" :class="{ compact: listScrolling }" aria-label="创建笔记"><button class="compose-main" aria-label="新建普通笔记" :disabled="isTransitioning" @click="createNote('richtext')"><Plus :size="27" /><span>笔记</span></button><span class="compose-separator"></span><button aria-label="新建灵感笔记" :disabled="isTransitioning" @click="createNote('mindmap')"><Workflow :size="24" /><span>灵感笔记</span></button></div>
     <div v-if="selectionMode" class="batch-actions" role="toolbar" aria-label="多选笔记操作"><button :disabled="!selectedNoteIds.size || isTransitioning" @click="batchGroupOpen = true"><Folder :size="21" />移动到</button><button class="danger" :disabled="!selectedNoteIds.size || isTransitioning" @click="deleteSelectedNotes"><Trash2 :size="21" />删除</button></div>
 
-    <main class="editor-pane">
+    <main class="editor-pane" :style="noteRevealStyle">
       <div v-if="actionError && showError" class="error-banner" role="alert">
         <CircleAlert :size="17" />
         <span>{{ actionError }}</span>
@@ -1375,7 +1406,7 @@ onBeforeUnmount(() => {
       </div>
     </main>
 
-    <Transition name="settings-slide"><SettingsPage v-if="settingsOpen" :vault="vault" :layout="listLayout" @close="settingsOpen = false" @privacy="authenticateSettings" @sync="syncWorkspace" @joined="retryInitialize" @layout="setListLayout" /></Transition>
+    <Transition name="settings-slide"><SettingsPage v-if="settingsOpen" :vault="vault" :layout="listLayout" :import-status="importStatus" @close="settingsOpen = false" @privacy="authenticateSettings" @sync="syncWorkspace" @joined="retryInitialize" @layout="setListLayout" @import="importNotes" /></Transition>
     <div v-if="privacyCovered" class="privacy-cover"><LockKeyhole :size="34" /><span>隐私笔记已隐藏</span><button class="action-secondary" @click="vaultPanelMode = 'privacy'">验证后继续</button></div>
     <div v-if="listMenuOpen" class="sheet-backdrop" @click.self="listMenuOpen = false"><section class="bottom-sheet" role="dialog" aria-modal="true" aria-label="笔记操作"><div class="sheet-grabber"></div><button class="sheet-action" @click="listMenuOpen = false; showGroupDialog({ mode: 'create' })"><FolderPlus :size="22" />新建分组</button><button class="sheet-action" @click="listMenuOpen = false; openPrivateArea()"><LockKeyhole :size="22" />隐私笔记</button><button class="sheet-cancel" @click="listMenuOpen = false">取消</button></section></div>
     <div v-if="batchGroupOpen" class="sheet-backdrop" @click.self="batchGroupOpen = false"><section class="bottom-sheet" role="dialog" aria-modal="true" aria-label="移动所选笔记到分组"><div class="sheet-grabber"></div><h2>移动到</h2><button class="sheet-action" :disabled="isTransitioning" @click="moveSelectedNotes(null)"><Inbox :size="21" />未分组</button><button v-for="group in groups" :key="group.id" class="sheet-action" :disabled="isTransitioning" @click="moveSelectedNotes(group.id)"><Folder :size="21" />{{ group.name }}</button><button class="sheet-cancel" @click="batchGroupOpen = false">取消</button></section></div>
