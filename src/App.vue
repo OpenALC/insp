@@ -106,6 +106,25 @@ function noteFlight(card: HTMLElement, closing = false) {
   content.removeAttribute('data-note-id')
   content.setAttribute('aria-hidden', 'true')
   content.tabIndex = -1
+  const cardTitle = card.querySelector<HTMLElement>('.note-card-topline strong')
+  const headerTitle = document.querySelector<HTMLElement>('.topbar-note-title')
+  const title = cardTitle && headerTitle ? document.createElement('div') : null
+  if (title && cardTitle && headerTitle) {
+    const from = cardTitle.getBoundingClientRect()
+    const to = headerTitle.getBoundingClientRect()
+    const dy = to.top + (to.height - from.height) / 2 - from.top
+    title.className = 'note-flight-title'
+    title.textContent = cardTitle.textContent
+    Object.assign(title.style, { left: `${from.left}px`, top: `${from.top}px`, width: `${from.width}px`, height: `${from.height}px`, font: getComputedStyle(cardTitle).font, lineHeight: getComputedStyle(cardTitle).lineHeight })
+    content.querySelector<HTMLElement>('.note-card-topline strong')!.style.visibility = 'hidden'
+    document.body.append(title)
+    const cardPosition = { transform: 'translate(0, 0)', opacity: 1 }
+    const headerPosition = { transform: `translate(${to.left - from.left}px, ${dy}px)`, opacity: 1 }
+    title.animate(closing
+      ? [{ ...headerPosition, opacity: 0 }, { ...headerPosition, opacity: 1, offset: .18 }, cardPosition]
+      : [cardPosition, headerPosition],
+    { duration: 330, easing: 'cubic-bezier(.22, 1, .36, 1)', fill: 'forwards' })
+  }
   shell.append(content)
   document.body.append(shell)
   const pageHeight = keyboardVisible.value ? fullViewportHeight : innerHeight
@@ -124,9 +143,10 @@ function noteFlight(card: HTMLElement, closing = false) {
     finished: motion.finished.then(() => undefined, () => undefined),
     async reveal() {
       const fade = shell.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 90, easing: 'ease-out', fill: 'forwards' })
-      await fade.finished
+      const titleFade = title?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 90, easing: 'ease-out', fill: 'forwards' })
+      await Promise.all([fade.finished, titleFade?.finished])
     },
-    dispose() { shell.remove() },
+    dispose() { shell.remove(); title?.remove() },
   }
 }
 

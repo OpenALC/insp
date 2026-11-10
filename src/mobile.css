@@ -224,6 +224,7 @@ button.settings-row { cursor: pointer; }
 }
 .note-flight { position: fixed; z-index: 120; overflow: hidden; color: var(--ink); background: var(--paper); transform-origin: 0 0; pointer-events: none; backface-visibility: hidden; }
 .note-flight .note-flight-card { width: 100%; margin: 0; border: 0; box-shadow: none; pointer-events: none; }
+.note-flight-title { position: fixed; z-index: 121; overflow: hidden; color: var(--ink); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
 @media (max-width:350px) { .note-list { columns: 1; } .floating-compose button { padding: 0 14px; } }
 @media (hover:none) {
   .icon-button:hover, .sidebar-add:hover, .dialog-close:hover { background: transparent; }
