@@ -369,7 +369,7 @@ function updateViewport() {
   fullViewportHeight = Math.max(fullViewportHeight, height)
   const keyboardOpen = fullViewportHeight - height > 120
   keyboardVisible.value = keyboardOpen
-  viewportHeight.value = height
+  if (noteSettingsOpen.value) viewportHeight.value = height
 }
 function onMindmapFocus(event: FocusEvent) {
   if ((event.target as HTMLElement).matches('textarea')) mobileEditing.value = true
@@ -382,6 +382,7 @@ function finishMobileEditing() {
 }
 
 async function openNoteOptions() {
+  viewportHeight.value = window.innerHeight
   optionsRestingHeight.value = mobileLayout.value && keyboardVisible.value ? fullViewportHeight : 0
   noteChoice.value = null
   exportStatus.value = ''
@@ -1541,9 +1542,8 @@ onBeforeUnmount(() => {
         />
 
         <footer class="editor-footer">
-          <div class="save-status" :class="`save-${saveState}`" role="status">
-            <span v-if="saveState === 'saved'" class="save-indicator"><Check :size="12" /></span>
-            <span v-else-if="saveState === 'saving'" class="save-spinner"></span>
+          <div v-if="saveState !== 'saved'" class="save-status" :class="`save-${saveState}`" role="status">
+            <span v-if="saveState === 'saving'" class="save-spinner"></span>
             <span v-else-if="saveState === 'error'" class="save-error-dot"><CircleAlert :size="13" /></span>
             <span v-else class="save-pending-dot"></span>
             {{ saveLabel }}

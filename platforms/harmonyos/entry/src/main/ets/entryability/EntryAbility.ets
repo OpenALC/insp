@@ -7,7 +7,7 @@ export default class EntryAbility extends UIAbility {
   private windowInsets: HarmonyWindowInsets | null = null;
   onCreate(_want: Want, _launchParam: AbilityConstant.LaunchParam): void {
     HarmonyHostRuntime.setExitHandler((): void => {
-      this.context.terminateSelf();
+      this.context.moveAbilityToBackground();
     });
   }
 

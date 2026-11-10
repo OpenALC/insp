@@ -3,6 +3,7 @@
   --ink: #000;
   --ink-soft: var(--ink);
   --muted: var(--ink);
+  --annotation-ink: #777e77;
   --sidebar-ink: var(--ink);
   --sidebar-muted: var(--ink);
   --brand-ink: var(--ink);
@@ -40,6 +41,7 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
   --ink: #d4d4d4;
+  --annotation-ink: #a4afa1;
   --brand-strong: #8bdc69;
   --brand-soft: #23341e;
   --brand-tint: #1c281a;
