@@ -4,8 +4,8 @@ import appInfo from '../../package.json'
 import type { VaultController } from '../security/types'
 import ThemeSelect from './ThemeSelect.vue'
 import { ArrowLeft, ChevronRight, Cloud, Copy, Download, Fingerprint, Github, Info, LockKeyhole, ShieldCheck } from 'lucide-vue-next'
-const props = defineProps<{ vault: VaultController; layout: string; importStatus?: string }>()
-const emit = defineEmits<{ close: []; privacy: []; sync: []; joined: []; layout: [value: string]; import: [files: File[]] }>()
+const props = defineProps<{ vault: VaultController; layout: string; importStatus?: string; transferStatus?: string }>()
+const emit = defineEmits<{ close: []; privacy: []; sync: []; joined: []; layout: [value: string]; import: [files: File[]]; exportNative: [] }>()
 const view = ref<'main' | 'sync' | 'privacy' | 'devices' | 'about' | 'import'>('main')
 const pageTitle = computed(() => ({ main: '设置', sync: '跨端同步', privacy: '隐私设置', devices: '连接已有空间', about: '关于拾页', import: '导入笔记' })[view.value])
 function back() { if (view.value === 'main') emit('close'); else view.value = 'main' }
@@ -72,7 +72,9 @@ async function copy() {
           <button class="settings-row" @click="view = 'devices'"><Copy :size="20" /><span>连接已有空间</span><ChevronRight :size="17" /></button>
         </div>
         <h2>数据</h2>
-        <div class="settings-section"><button class="settings-row" @click="view = 'import'"><Download :size="20" /><span>导入笔记</span><ChevronRight :size="17" /></button></div>
+        <div class="settings-section"><button class="settings-row" @click="view = 'import'"><Download :size="20" /><span>导入笔记</span><ChevronRight :size="17" /></button><button class="settings-row" @click="emit('exportNative')"><Download :size="20" /><span>导出到拾页 Native</span><ChevronRight :size="17" /></button></div>
+        <p class="settings-page-description">迁移 ZIP 包含可见笔记的明文内容与图片；隐私笔记需先解锁才会导出。</p>
+        <p v-if="transferStatus" class="settings-page-description" role="status">{{ transferStatus }}</p>
         <h2>其他</h2>
         <div class="settings-section"><button class="settings-row" @click="view = 'about'"><Info :size="20" /><span>关于拾页</span><ChevronRight :size="17" /></button></div>
         <div class="settings-about"><strong>拾页</strong><span>给想法，留一页空白。</span><small>OpenALC · MIT</small></div>

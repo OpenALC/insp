@@ -5,6 +5,7 @@ import type { Note, NoteContent, NoteGroup, NoteKind, NoteSummary, NoteWrite, Pr
 import { mindMapPreview, mindMapText, UNTITLED_MIND_MAP, type MindMapDocument } from './domain/mindmap'
 import { platform, registerCloseGuard, vault, getDeviceInsets, setDeviceAppearance, shareNoteText, shareNoteImage, saveNoteExport } from './platform'
 import { exportNote } from './export'
+import { exportWorkspaceForNative } from './export/workspace'
 import type { ExportFile } from './export'
 import VaultPanel from './components/VaultPanel.vue'
 import SettingsPage from './components/SettingsPage.vue'
@@ -224,6 +225,7 @@ const optionsPanel = ref<HTMLElement>()
 const optionsRestingHeight = ref(0)
 const settingsOpen = ref(false)
 const importStatus = ref('')
+const transferStatus = ref('')
 const settingsPrivacy = ref(false)
 const listLayout = ref(localStorage.getItem('insp.noteLayout') === 'list' ? 'list' : 'grid')
 const listScrolled = ref(false)
@@ -1047,6 +1049,19 @@ async function importNotes(files: File[]) {
   importStatus.value = completed ? `已导入 ${count} 篇笔记` : `已导入 ${count} 篇；其余文件未能导入`
 }
 
+async function exportToNative() {
+  transferStatus.value = '正在准备迁移文件…'
+  try {
+    await flushSaves()
+    const loaded = await platform.repository.loadWorkspace()
+    const archive = await exportWorkspaceForNative(loaded, platform)
+    await saveNoteExport(archive)
+    transferStatus.value = `已导出 ${loaded.notes.length} 篇笔记。迁移文件包含明文，请妥善保管。`
+  } catch (error) {
+    transferStatus.value = error instanceof Error ? error.message : String(error)
+  }
+}
+
 async function deleteActiveNote() {
   const note = activeNote.value
   if (!note) return
@@ -1549,7 +1564,7 @@ onBeforeUnmount(() => {
       </div>
     </main>
 
-    <Transition name="settings-slide"><SettingsPage v-if="settingsOpen" :vault="vault" :layout="listLayout" :import-status="importStatus" @close="settingsOpen = false" @privacy="authenticateSettings" @sync="syncWorkspace" @joined="retryInitialize" @layout="setListLayout" @import="importNotes" /></Transition>
+    <Transition name="settings-slide"><SettingsPage v-if="settingsOpen" :vault="vault" :layout="listLayout" :import-status="importStatus" :transfer-status="transferStatus" @close="settingsOpen = false" @privacy="authenticateSettings" @sync="syncWorkspace" @joined="retryInitialize" @layout="setListLayout" @import="importNotes" @export-native="exportToNative" /></Transition>
     <div v-if="privacyCovered" class="privacy-cover"><LockKeyhole :size="34" /><span>隐私笔记已隐藏</span><button class="action-secondary" @click="vaultPanelMode = 'privacy'">验证后继续</button></div>
     <div v-if="listMenuOpen" class="sheet-backdrop" @click.self="listMenuOpen = false"><section class="bottom-sheet" role="dialog" aria-modal="true" aria-label="笔记操作"><div class="sheet-grabber"></div><button class="sheet-action" @click="listMenuOpen = false; showGroupDialog({ mode: 'create' })"><FolderPlus :size="22" />新建分组</button><button class="sheet-action" @click="listMenuOpen = false; openPrivateArea()"><LockKeyhole :size="22" />隐私笔记</button><button class="sheet-cancel" @click="listMenuOpen = false">取消</button></section></div>
     <div v-if="batchGroupOpen" class="sheet-backdrop" @click.self="batchGroupOpen = false"><section class="bottom-sheet" role="dialog" aria-modal="true" aria-label="移动所选笔记到分组"><div class="sheet-grabber"></div><h2>移动到</h2><button class="sheet-action" :disabled="isTransitioning" @click="moveSelectedNotes(null)"><Inbox :size="21" />未分组</button><button v-for="group in groups" :key="group.id" class="sheet-action" :disabled="isTransitioning" @click="moveSelectedNotes(group.id)"><Folder :size="21" />{{ group.name }}</button><button class="sheet-cancel" @click="batchGroupOpen = false">取消</button></section></div>
