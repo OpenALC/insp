@@ -23,6 +23,7 @@ export interface NoteSummary {
   privacy: PrivacyMode
   syncPolicy: SyncPolicy
   mindMapPreview?: MindMapPreview
+  richPreview?: JSONContent
   preview: string
   createdAt: string
   updatedAt: string

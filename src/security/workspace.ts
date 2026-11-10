@@ -1,7 +1,8 @@
 import { reactive } from 'vue'
+import type { JSONContent } from '@tiptap/core'
 import type { Attachment, Note, NoteGroup, PlatformAdapter, PlatformCapabilities } from '../domain/models'
 import { createMindMapDocument, mindMapPreview, mindMapText, unifyMindMapTitle, UNTITLED_MIND_MAP, type MindMapDocument } from '../domain/mindmap.ts'
-import { isEmptyRichText } from '../domain/note-content.ts'
+import { isEmptyRichText, richTextCardPreview } from '../domain/note-content.ts'
 import type { NativeInvoke } from '../platform/native'
 import type { CipherEnvelope, RemoteChange, SyncMutation, PushResult } from '../sync/contracts'
 import { createVault, unlockVault, encryptValue, decryptValue, encodeBase64, decodeBase64, type VaultHeader } from './crypto.ts'
@@ -139,7 +140,7 @@ export class EncryptedWorkspace implements VaultController {
             groups: copy(this.groups()),
             notes: this.notes().filter(n => !n.deletedAt && (n.privacy !== 'private' || this.state.privateVisible)).map(n => {
               const { content: _content, schemaVersion: _schema, deletedAt: _deleted, ...summary } = n
-              return copy({ ...summary, mindMapPreview: n.kind === 'mindmap' ? mindMapPreview(n.content as MindMapDocument) : undefined })
+              return copy({ ...summary, mindMapPreview: n.kind === 'mindmap' ? mindMapPreview(n.content as MindMapDocument) : undefined, richPreview: n.kind === 'richtext' ? richTextCardPreview(n.content as JSONContent) : undefined })
             }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
             dataDirectory: this.meta.dataDirectory,
           }

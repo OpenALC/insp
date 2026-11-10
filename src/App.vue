@@ -9,7 +9,8 @@ import type { ExportFile } from './export'
 import VaultPanel from './components/VaultPanel.vue'
 import SettingsPage from './components/SettingsPage.vue'
 import MindMapCardPreview from './components/MindMapCardPreview.vue'
-import { isEmptyRichText } from './domain/note-content'
+import RichTextCardPreview from './components/RichTextCardPreview.vue'
+import { isEmptyRichText, richTextCardPreview } from './domain/note-content'
 const RichTextEditor = defineAsyncComponent(() => import('./components/RichTextEditor.vue'))
 const MindMapEditor = defineAsyncComponent(() => import('./components/MindMapEditor.vue'))
 import {
@@ -527,7 +528,7 @@ function documentText(node: JSONContent): string {
 
 function summaryFromNote(note: Note, plainText = note.preview): NoteSummary {
   const { content: _content, schemaVersion: _schemaVersion, ...summary } = note
-  return { ...summary, mindMapPreview: note.kind === 'mindmap' ? mindMapPreview(note.content as MindMapDocument) : undefined, preview: plainText.trim().replace(/\s+/g, ' ').slice(0, 180) }
+  return { ...summary, mindMapPreview: note.kind === 'mindmap' ? mindMapPreview(note.content as MindMapDocument) : undefined, richPreview: note.kind === 'richtext' ? richTextCardPreview(note.content as JSONContent) : undefined, preview: plainText.trim().replace(/\s+/g, ' ').slice(0, 180) }
 }
 
 function replaceSummary(summary: NoteSummary) {
@@ -1413,6 +1414,7 @@ onBeforeUnmount(() => {
           <span class="note-card-content">
             <span class="note-card-topline"><strong>{{ note.title || (note.kind === 'mindmap' ? UNTITLED_MIND_MAP : '未命名笔记') }}</strong></span>
             <MindMapCardPreview v-if="note.kind === 'mindmap' && note.mindMapPreview" :preview="note.mindMapPreview" />
+            <RichTextCardPreview v-else-if="note.kind === 'richtext' && note.richPreview" :key="note.revision" :content="note.richPreview" :fallback="note.preview || '还没有正文，点开继续记录。'" />
             <span v-else class="note-preview">{{ note.preview || '还没有正文，点开继续记录。' }}</span>
             <span class="note-card-foot"><time>{{ formatDate(note.updatedAt) }}</time><span v-if="note.groupId" class="note-group-tag">{{ groups.find((item) => item.id === note.groupId)?.name ?? '分组' }}</span><Workflow v-if="note.kind === 'mindmap'" :size="15" aria-label="灵感笔记" /></span>
           </span>
