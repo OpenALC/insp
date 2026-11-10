@@ -99,36 +99,26 @@ function noteFlight(card: HTMLElement, closing = false) {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return null
   const rect = card.getBoundingClientRect()
   const duration = 360
-  const pageHeight = keyboardVisible.value ? fullViewportHeight : innerHeight
+  const editor = document.querySelector<HTMLElement>('.editor-pane')!
+  const editorRect = editor.getBoundingClientRect()
+  const compactClip = `inset(${rect.top - editorRect.top}px ${editorRect.right - rect.right}px ${editorRect.bottom - rect.bottom}px ${rect.left - editorRect.left}px round 18px)`
+  const expandedClip = 'inset(0px 0px 0px 0px round 0px)'
+  editor.style.clipPath = closing ? expandedClip : compactClip
+  editor.style.visibility = 'visible'
   const scrim = document.createElement('div')
   scrim.className = 'note-flight-scrim'
-  const shell = document.createElement('div')
-  shell.className = 'note-flight'
-  Object.assign(shell.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` })
-  const editor = document.querySelector<HTMLElement>('.editor-pane')!
-  const page = editor.cloneNode(true) as HTMLElement
-  page.classList.add('note-flight-page')
-  page.setAttribute('aria-hidden', 'true')
-  Object.assign(page.style, { position: 'absolute', left: '0', top: '0', right: 'auto', bottom: 'auto', width: `${innerWidth}px`, height: `${pageHeight}px`, visibility: 'visible', opacity: closing ? '1' : '0' })
-  page.querySelector<HTMLElement>('.topbar-note-title')?.style.setProperty('visibility', 'hidden')
-  shell.append(page)
   document.body.append(scrim)
-  document.body.append(shell)
-  for (const selector of ['.editor-content-shell', '.mindmap-outline-viewport', '.mindmap-tree-viewport']) {
-    const source = editor.querySelector<HTMLElement>(selector)
-    const copy = page.querySelector<HTMLElement>(selector)
-    if (source && copy) { copy.scrollTop = source.scrollTop; copy.scrollLeft = source.scrollLeft }
-  }
   const content = card.cloneNode(true) as HTMLElement
   content.classList.remove('selected', 'multi-selected')
   content.classList.add('note-flight-card')
   content.removeAttribute('data-note-id')
   content.setAttribute('aria-hidden', 'true')
   content.tabIndex = -1
-  Object.assign(content.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` })
+  Object.assign(content.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px`, opacity: closing ? '0' : '1' })
   const cardTitle = card.querySelector<HTMLElement>('.note-card-topline strong')
-  const headerTitle = document.querySelector<HTMLElement>('.topbar-note-title')
+  const headerTitle = editor.querySelector<HTMLElement>('.topbar-note-title')
   const title = cardTitle && headerTitle ? document.createElement('div') : null
+  let headerTransform = ''
   if (title && cardTitle && headerTitle) {
     const from = cardTitle.getBoundingClientRect()
     const to = headerTitle.getBoundingClientRect()
@@ -137,43 +127,35 @@ function noteFlight(card: HTMLElement, closing = false) {
     title.textContent = cardTitle.textContent
     Object.assign(title.style, { left: `${from.left}px`, top: `${from.top}px`, width: `${from.width}px`, height: `${from.height}px`, font: getComputedStyle(cardTitle).font, lineHeight: getComputedStyle(cardTitle).lineHeight })
     content.querySelector<HTMLElement>('.note-card-topline strong')!.style.visibility = 'hidden'
+    headerTitle.style.visibility = 'hidden'
     document.body.append(title)
-    const cardPosition = { transform: 'translate(0, 0)', opacity: 1 }
-    const headerPosition = { transform: `translate(${to.left - from.left}px, ${dy}px)`, opacity: 1 }
-    title.animate(closing
-      ? [{ ...headerPosition, opacity: 0 }, { ...headerPosition, opacity: 1, offset: .18 }, cardPosition]
-      : [cardPosition, headerPosition],
-    { duration, easing: 'cubic-bezier(.22, 1, .36, 1)', fill: 'forwards' })
+    headerTransform = `translate(${to.left - from.left}px, ${dy}px)`
   }
   document.body.append(content)
-  const compactFrame = { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` }
-  const expandedFrame = { left: '0px', top: '0px', width: `${innerWidth}px`, height: `${pageHeight}px` }
-  const motion = shell.animate(closing ? [expandedFrame, compactFrame] : [compactFrame, expandedFrame], { duration, easing: 'cubic-bezier(.22, 1, .36, 1)', fill: 'forwards' })
-  shell.animate(closing
-    ? [{ borderRadius: '0px' }, { borderRadius: '40px', offset: .62 }, { borderRadius: '18px' }]
-    : [{ borderRadius: '18px' }, { borderRadius: '40px', offset: .38 }, { borderRadius: '0px' }],
-  { duration, easing: 'ease-out', fill: 'forwards' })
-  scrim.animate([{ opacity: 0 }, { opacity: 1, offset: .18 }, { opacity: 1, offset: .72 }, { opacity: 0 }],
-    { duration, easing: 'ease-out', fill: 'forwards' })
-  page.animate(closing
-    ? [{ opacity: 1 }, { opacity: 1, offset: .55 }, { opacity: 0, offset: .92 }]
-    : [{ opacity: 0 }, { opacity: 0, offset: .32 }, { opacity: 1, offset: .86 }],
-  { duration, easing: 'ease-out', fill: 'forwards' })
-  content.animate(closing
-    ? [{ opacity: 0 }, { opacity: 0, offset: .65 }, { opacity: 1 }]
-    : [{ opacity: 1, transform: 'translate(0, 0)' }, { opacity: 1, transform: 'translate(0, 0)', offset: .28 }, { opacity: 0, transform: `translate(${-rect.left * .22}px, ${-rect.top * .22}px)`, offset: .82 }],
-  { duration, easing: 'ease-out', fill: 'forwards' })
+  let motion: Animation
   return {
-    finished: motion.finished.then(() => undefined, () => undefined),
-    async reveal(editor: HTMLElement) {
+    async run() {
+      const options = { duration, easing: 'cubic-bezier(.22, 1, .36, 1)', fill: 'forwards' } as const
+      motion = editor.animate(closing ? [{ clipPath: expandedClip }, { clipPath: compactClip }] : [{ clipPath: compactClip }, { clipPath: expandedClip }], options)
+      scrim.animate([{ opacity: 0 }, { opacity: 1, offset: .18 }, { opacity: 1, offset: .72 }, { opacity: 0 }], { duration, fill: 'forwards' })
+      content.animate(closing
+        ? [{ opacity: 0 }, { opacity: 0, offset: .78 }, { opacity: 1, offset: .94 }]
+        : [{ opacity: 1 }, { opacity: 1, offset: .08 }, { opacity: 0, offset: .24 }],
+      { duration, fill: 'forwards' })
+      if (title) title.animate(closing
+        ? [{ transform: headerTransform }, { transform: 'translate(0, 0)' }]
+        : [{ transform: 'translate(0, 0)' }, { transform: headerTransform }], options)
       await motion.finished
-      editor.style.removeProperty('opacity')
-      const options = { duration: 70, easing: 'ease-out', fill: 'forwards' } as const
-      const fade = shell.animate([{ opacity: 1 }, { opacity: 0 }], options)
-      const titleFade = title?.animate([{ opacity: 1 }, { opacity: 0 }], options)
-      await Promise.all([fade.finished, titleFade?.finished])
     },
-    dispose() { scrim.remove(); shell.remove(); content.remove(); title?.remove() },
+    dispose() {
+      motion?.cancel()
+      editor.style.removeProperty('clip-path')
+      editor.style.removeProperty('visibility')
+      headerTitle?.style.removeProperty('visibility')
+      scrim.remove()
+      content.remove()
+      title?.remove()
+    },
   }
 }
 
@@ -964,12 +946,9 @@ async function openNote(noteId: string, sourceCard: HTMLElement) {
       if (mobileLayout.value) await afterPaint()
     }
     const flight = mobileLayout.value ? noteFlight(sourceCard) : null
-    const editor = flight ? document.querySelector<HTMLElement>('.editor-pane') : null
-    if (editor) editor.style.opacity = '0'
     mobilePane.value = 'editor'
     await nextTick()
-    if (flight) await afterPaint()
-    if (editor) await flight?.reveal(editor)
+    await flight?.run()
     flight?.dispose()
   })
 }
@@ -1157,14 +1136,10 @@ async function showNoteList() {
   await runTransition(async () => {
     const card = activeNote.value && mobileLayout.value ? noteCard(activeNote.value.id, true) : null
     const flight = card ? noteFlight(card, true) : null
-    const editor = document.querySelector<HTMLElement>('.editor-pane')
-    const fade = flight && editor ? editor.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 100, easing: 'ease-out', fill: 'forwards' }) : null
-    await flight?.finished
+    await flight?.run()
     mobilePane.value = 'list'
     noteSettingsOpen.value = false
     await nextTick()
-    if (flight) await afterPaint()
-    fade?.cancel()
     flight?.dispose()
   })
 }

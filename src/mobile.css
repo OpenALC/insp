@@ -237,11 +237,9 @@ button.settings-row { cursor: pointer; }
   .dialog-actions button { height: 44px; font-size: 15px; }
   .settings-row:disabled { opacity: .5; }
 }
-.note-flight-scrim { position: fixed; z-index: 119; inset: 0; background: rgba(0, 0, 0, .24); backdrop-filter: blur(2px); opacity: 0; pointer-events: none; }
-.note-flight { position: fixed; z-index: 120; overflow: hidden; contain: layout paint; color: var(--ink); background: var(--paper); pointer-events: none; }
-.note-flight-page { pointer-events: none; }
-.note-flight-card { position: fixed; z-index: 121; margin: 0; border: 0; box-shadow: none; background: transparent; pointer-events: none; }
-.note-flight-title { position: fixed; z-index: 122; overflow: hidden; color: var(--ink); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
+.note-flight-scrim { position: fixed; z-index: 29; inset: 0; background: rgba(0, 0, 0, .24); backdrop-filter: blur(2px); opacity: 0; pointer-events: none; }
+.note-flight-card { position: fixed; z-index: 31; margin: 0; border: 0; box-shadow: none; background: var(--paper); pointer-events: none; }
+.note-flight-title { position: fixed; z-index: 32; overflow: hidden; color: var(--ink); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
 @media (max-width:350px) { .note-list { columns: 1; } .floating-compose button { padding: 0 14px; } }
 @media (hover:none) {
   .icon-button:hover, .sidebar-add:hover, .dialog-close:hover { background: transparent; }
