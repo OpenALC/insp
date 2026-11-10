@@ -17,7 +17,7 @@ function renderNode(node: JSONContent, images: Record<string, string>): VNodeChi
   if (node.type === 'image') {
     const id = String(node.attrs?.attachmentId ?? '')
     const alt = String(node.attrs?.alt ?? '')
-    return images[id] ? h('img', { src: images[id], alt, loading: 'lazy' }) : h('span', { class: 'card-image-placeholder' }, alt || '图片')
+    return images[id] ? h('img', { src: images[id], alt, loading: 'lazy', 'data-attachment-id': id }) : h('span', { class: 'card-image-placeholder' }, alt || '图片')
   }
   const children = (node.content ?? []).map(child => renderNode(child, images))
   const layout = { textAlign: node.attrs?.textAlign, marginLeft: node.attrs?.indent ? `${Number(node.attrs.indent) * 1.75}em` : undefined }

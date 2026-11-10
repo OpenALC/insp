@@ -237,9 +237,54 @@ button.settings-row { cursor: pointer; }
   .dialog-actions button { height: 44px; font-size: 15px; }
   .settings-row:disabled { opacity: .5; }
 }
-.note-flight-scrim { position: fixed; z-index: 29; inset: 0; background: rgba(0, 0, 0, .24); backdrop-filter: blur(2px); opacity: 0; pointer-events: none; }
-.note-flight-card { position: fixed; z-index: 31; margin: 0; border: 0; box-shadow: none; background: var(--paper); pointer-events: none; }
-.note-flight-title { position: fixed; z-index: 32; overflow: hidden; color: var(--ink); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
+.note-flight-scrim { position: fixed; z-index: 119; inset: 0; background: rgba(0, 0, 0, .24); opacity: 0; pointer-events: none; }
+.note-flight { position: fixed; z-index: 120; overflow: hidden; contain: layout paint; color: var(--ink); background: var(--paper); pointer-events: none; }
+.note-flight-page { pointer-events: none; }
+.note-flight-card { position: fixed; z-index: 121; margin: 0; border: 0; box-shadow: none; background: var(--paper); pointer-events: none; }
+.note-flight-title { position: fixed; z-index: 122; overflow: hidden; color: var(--ink); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
+html.note-container-enter { --note-container-duration: 300ms; }
+html.note-container-return { --note-container-duration: 250ms; }
+html:is(.note-container-enter, .note-container-return)::view-transition-group(note-container) {
+  overflow: hidden;
+  border-radius: 18px;
+  background: var(--paper);
+  animation-duration: var(--note-container-duration);
+  animation-timing-function: cubic-bezier(.4, 0, .2, 1);
+}
+html:is(.note-container-enter, .note-container-return)::view-transition-group(note-image) {
+  overflow: hidden;
+  border-radius: 10px;
+  animation-duration: var(--note-container-duration);
+  animation-timing-function: cubic-bezier(.4, 0, .2, 1);
+}
+html:is(.note-container-enter, .note-container-return)::view-transition-old(note-image),
+html:is(.note-container-enter, .note-container-return)::view-transition-new(note-image) { mix-blend-mode: normal; }
+html.note-container-enter::view-transition-old(note-image) { animation: note-image-old-enter 300ms linear both; }
+html.note-container-enter::view-transition-new(note-image) { animation: note-image-new-enter 300ms linear both; }
+html.note-container-return::view-transition-old(note-image) { animation: note-image-old-return 250ms linear both; }
+html.note-container-return::view-transition-new(note-image) { animation: note-image-new-return 250ms linear both; }
+html:is(.note-container-enter, .note-container-return)::view-transition-old(note-container),
+html:is(.note-container-enter, .note-container-return)::view-transition-new(note-container) { mix-blend-mode: normal; }
+html.note-container-enter::view-transition-old(note-container) { animation: note-card-out 300ms linear both; }
+html.note-container-enter::view-transition-new(note-container) { animation: note-page-in 300ms linear both; }
+html.note-container-return::view-transition-old(note-container) { animation: note-page-out 250ms linear both; }
+html.note-container-return::view-transition-new(note-container) { animation: note-card-in 250ms linear both; }
+html.note-container-enter::view-transition-old(root) { animation: note-root-enter-old 300ms linear both; }
+html.note-container-enter::view-transition-new(root) { animation: note-root-enter-new 300ms linear both; }
+html.note-container-return::view-transition-old(root) { animation: note-root-return-old 250ms linear both; }
+html.note-container-return::view-transition-new(root) { animation: note-root-return-new 250ms linear both; }
+@keyframes note-card-out { 0% { opacity: 1; } 32%, 100% { opacity: 0; } }
+@keyframes note-image-old-enter { 0%, 65% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes note-image-new-enter { 0%, 65% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes note-image-old-return { 0%, 35% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes note-image-new-return { 0%, 35% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes note-page-in { 0%, 32% { opacity: 0; } 78%, 100% { opacity: 1; } }
+@keyframes note-page-out { 0%, 48% { opacity: 1; } 75%, 100% { opacity: 0; } }
+@keyframes note-card-in { 0%, 70% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes note-root-enter-old { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes note-root-enter-new { 0%, 80% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes note-root-return-old { 0%, 25% { opacity: 1; } 60%, 100% { opacity: 0; } }
+@keyframes note-root-return-new { 0%, 25% { opacity: 0; } 60%, 100% { opacity: 1; } }
 @media (max-width:350px) { .note-list { columns: 1; } .floating-compose button { padding: 0 14px; } }
 @media (hover:none) {
   .icon-button:hover, .sidebar-add:hover, .dialog-close:hover { background: transparent; }

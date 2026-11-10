@@ -39,7 +39,7 @@ function onImageError() {
 
 <template>
   <NodeViewWrapper as="figure" class="attachment-image" contenteditable="false">
-    <img v-if="source && !imageFailed" :src="source" :alt="String(node.attrs.alt || '')" draggable="false" @error="onImageError" />
+    <img v-if="source && !imageFailed" :src="source" :alt="String(node.attrs.alt || '')" :data-attachment-id="String(node.attrs.attachmentId)" draggable="false" @error="onImageError" />
     <span v-else-if="failure" class="attachment-image-error" role="img" :aria-label="`图片加载失败：${failure}`">
       <span class="attachment-image-error-mark" aria-hidden="true">!</span>
       <span>图片加载失败：{{ failure }}</span>

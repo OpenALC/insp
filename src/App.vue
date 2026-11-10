@@ -95,19 +95,62 @@ function noteCard(id: string, reveal = false): HTMLElement | null {
   return card
 }
 
+async function noteContainerTransition(card: HTMLElement, closing: boolean, update: () => Promise<void>): Promise<boolean> {
+  if (!document.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches) return false
+  const editor = document.querySelector<HTMLElement>('.editor-pane')!
+  const outgoing = closing ? editor : card
+  const incoming = closing ? card : editor
+  const cardImage = card.querySelector<HTMLImageElement>('.rich-card-preview img[data-attachment-id]')
+  const editorImage = editor.querySelector<HTMLImageElement>('.rich-editor-content img[data-attachment-id]')
+  const sharedImage = cardImage?.dataset.attachmentId === editorImage?.dataset.attachmentId &&
+    cardImage?.complete && cardImage.naturalWidth > 0 && editorImage?.complete && editorImage.naturalWidth > 0
+  const outgoingImage = sharedImage ? (closing ? editorImage : cardImage) : null
+  const incomingImage = sharedImage ? (closing ? cardImage : editorImage) : null
+  const direction = closing ? 'note-container-return' : 'note-container-enter'
+  document.documentElement.classList.add(direction)
+  outgoing.style.viewTransitionName = 'note-container'
+  if (outgoingImage) outgoingImage.style.viewTransitionName = 'note-image'
+  const transition = document.startViewTransition(async () => {
+    outgoing.style.removeProperty('view-transition-name')
+    outgoingImage?.style.removeProperty('view-transition-name')
+    incoming.style.viewTransitionName = 'note-container'
+    if (incomingImage) incomingImage.style.viewTransitionName = 'note-image'
+    await update()
+  })
+  await transition.finished
+  incoming.style.removeProperty('view-transition-name')
+  incomingImage?.style.removeProperty('view-transition-name')
+  document.documentElement.classList.remove(direction)
+  return true
+}
+
 function noteFlight(card: HTMLElement, closing = false) {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return null
   const rect = card.getBoundingClientRect()
   const duration = 360
   const editor = document.querySelector<HTMLElement>('.editor-pane')!
-  const editorRect = editor.getBoundingClientRect()
-  const compactClip = `inset(${rect.top - editorRect.top}px ${editorRect.right - rect.right}px ${editorRect.bottom - rect.bottom}px ${rect.left - editorRect.left}px round 18px)`
-  const expandedClip = 'inset(0px 0px 0px 0px round 0px)'
-  editor.style.clipPath = closing ? expandedClip : compactClip
-  editor.style.visibility = 'visible'
+  const pageHeight = keyboardVisible.value ? fullViewportHeight : innerHeight
+  const compactFrame = { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` }
+  const expandedFrame = { left: '0px', top: '0px', width: `${innerWidth}px`, height: `${pageHeight}px` }
   const scrim = document.createElement('div')
   scrim.className = 'note-flight-scrim'
+  const shell = document.createElement('div')
+  shell.className = 'note-flight'
+  Object.assign(shell.style, closing ? expandedFrame : compactFrame)
+  const page = editor.cloneNode(true) as HTMLElement
+  page.classList.add('note-flight-page')
+  page.setAttribute('aria-hidden', 'true')
+  Object.assign(page.style, { position: 'absolute', left: '0', top: '0', right: 'auto', bottom: 'auto', width: `${innerWidth}px`, height: `${pageHeight}px`, visibility: 'visible', opacity: closing ? '1' : '0' })
+  page.querySelector<HTMLElement>('.topbar-note-title')?.style.setProperty('visibility', 'hidden')
+  shell.append(page)
   document.body.append(scrim)
+  document.body.append(shell)
+  for (const selector of ['.editor-content-shell', '.mindmap-outline-viewport', '.mindmap-tree-viewport']) {
+    const source = editor.querySelector<HTMLElement>(selector)
+    const copy = page.querySelector<HTMLElement>(selector)
+    if (source && copy) { copy.scrollTop = source.scrollTop; copy.scrollLeft = source.scrollLeft }
+  }
+  editor.style.opacity = '0'
   const content = card.cloneNode(true) as HTMLElement
   content.classList.remove('selected', 'multi-selected')
   content.classList.add('note-flight-card')
@@ -132,27 +175,39 @@ function noteFlight(card: HTMLElement, closing = false) {
     headerTransform = `translate(${to.left - from.left}px, ${dy}px)`
   }
   document.body.append(content)
-  let motion: Animation
+  const animations: Animation[] = []
   return {
     async run() {
       const options = { duration, easing: 'cubic-bezier(.22, 1, .36, 1)', fill: 'forwards' } as const
-      motion = editor.animate(closing ? [{ clipPath: expandedClip }, { clipPath: compactClip }] : [{ clipPath: compactClip }, { clipPath: expandedClip }], options)
-      scrim.animate([{ opacity: 0 }, { opacity: 1, offset: .18 }, { opacity: 1, offset: .72 }, { opacity: 0 }], { duration, fill: 'forwards' })
-      content.animate(closing
-        ? [{ opacity: 0 }, { opacity: 0, offset: .78 }, { opacity: 1, offset: .94 }]
-        : [{ opacity: 1 }, { opacity: 1, offset: .08 }, { opacity: 0, offset: .24 }],
-      { duration, fill: 'forwards' })
-      if (title) title.animate(closing
+      const motion = shell.animate(closing ? [expandedFrame, compactFrame] : [compactFrame, expandedFrame], options)
+      animations.push(motion)
+      animations.push(shell.animate(closing
+        ? [{ borderRadius: '0px' }, { borderRadius: '18px' }]
+        : [{ borderRadius: '18px' }, { borderRadius: '0px' }], options))
+      animations.push(scrim.animate([{ opacity: 0 }, { opacity: 1, offset: .18 }, { opacity: 1, offset: .72 }, { opacity: 0 }], { duration, fill: 'forwards' }))
+      animations.push(page.animate(closing
+        ? [{ opacity: 1 }, { opacity: 1, offset: .55 }, { opacity: 0, offset: .9 }]
+        : [{ opacity: 0 }, { opacity: 0, offset: .15 }, { opacity: 1, offset: .55 }],
+      { duration, fill: 'forwards' }))
+      animations.push(content.animate(closing
+        ? [{ opacity: 0 }, { opacity: 0, offset: .65 }, { opacity: 1, offset: .95 }]
+        : [{ opacity: 1 }, { opacity: 1, offset: .15 }, { opacity: 0, offset: .55 }],
+      { duration, fill: 'forwards' }))
+      if (!closing) {
+        animations.push(shell.animate([{ opacity: 1 }, { opacity: 1, offset: .75 }, { opacity: 0 }], { duration, fill: 'forwards' }))
+        animations.push(editor.animate([{ opacity: 0 }, { opacity: 0, offset: .75 }, { opacity: 1 }], { duration, fill: 'forwards' }))
+      }
+      if (title) animations.push(title.animate(closing
         ? [{ transform: headerTransform }, { transform: 'translate(0, 0)' }]
-        : [{ transform: 'translate(0, 0)' }, { transform: headerTransform }], options)
+        : [{ transform: 'translate(0, 0)' }, { transform: headerTransform }], options))
       await motion.finished
     },
     dispose() {
-      motion?.cancel()
-      editor.style.removeProperty('clip-path')
-      editor.style.removeProperty('visibility')
+      for (const animation of animations) animation.cancel()
+      editor.style.removeProperty('opacity')
       headerTitle?.style.removeProperty('visibility')
       scrim.remove()
+      shell.remove()
       content.remove()
       title?.remove()
     },
@@ -945,6 +1000,10 @@ async function openNote(noteId: string, sourceCard: HTMLElement) {
       await nextTick()
       if (mobileLayout.value) await afterPaint()
     }
+    if (mobileLayout.value && await noteContainerTransition(sourceCard, false, async () => {
+      mobilePane.value = 'editor'
+      await nextTick()
+    })) return
     const flight = mobileLayout.value ? noteFlight(sourceCard) : null
     mobilePane.value = 'editor'
     await nextTick()
@@ -1135,6 +1194,11 @@ function chooseFilter(key: string) {
 async function showNoteList() {
   await runTransition(async () => {
     const card = activeNote.value && mobileLayout.value ? noteCard(activeNote.value.id, true) : null
+    if (card && await noteContainerTransition(card, true, async () => {
+      mobilePane.value = 'list'
+      noteSettingsOpen.value = false
+      await nextTick()
+    })) return
     const flight = card ? noteFlight(card, true) : null
     await flight?.run()
     mobilePane.value = 'list'
