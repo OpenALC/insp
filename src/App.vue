@@ -129,22 +129,29 @@ function noteFlight(card: HTMLElement, closing = false) {
   document.body.append(shell)
   const pageHeight = keyboardVisible.value ? fullViewportHeight : innerHeight
   const expanded = `translate(${-rect.left}px, ${-rect.top}px) scale(${innerWidth / rect.width}, ${pageHeight / rect.height})`
-  const compactFrame = { transform: 'translate(0, 0) scale(1)', borderRadius: '18px', opacity: 1 }
-  const expandedFrame = { transform: expanded, borderRadius: '0px', opacity: 1 }
+  const compactFrame = { transform: 'translate(0, 0) scale(1)', borderRadius: '18px' }
+  const expandedFrame = { transform: expanded, borderRadius: '0px' }
   const frames = closing
     ? [{ ...expandedFrame, opacity: 0 }, { ...expandedFrame, opacity: 1, offset: .18 }, compactFrame]
     : [compactFrame, expandedFrame]
+  const startedAt = performance.now()
   const motion = shell.animate(frames, { duration: 330, easing: 'cubic-bezier(.22, 1, .36, 1)', fill: 'forwards' })
   content.animate(closing
     ? [{ opacity: 0 }, { opacity: 0, offset: .68 }, { opacity: 1 }]
-    : [{ opacity: 1 }, { opacity: 0, offset: .16 }, { opacity: 0 }],
+    : [{ opacity: 1 }, { opacity: 1, offset: .3 }, { opacity: 0, offset: .8 }],
   { duration: 330, easing: 'ease-out', fill: 'forwards' })
   return {
     finished: motion.finished.then(() => undefined, () => undefined),
-    async reveal() {
-      const fade = shell.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 90, easing: 'ease-out', fill: 'forwards' })
-      const titleFade = title?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 90, easing: 'ease-out', fill: 'forwards' })
-      await Promise.all([fade.finished, titleFade?.finished])
+    async reveal(editor: HTMLElement) {
+      const delay = Math.max(0, 125 - (performance.now() - startedAt))
+      if (delay) await new Promise(resolve => setTimeout(resolve, delay))
+      const options = { duration: 185, easing: 'ease-in-out', fill: 'forwards' } as const
+      const fade = shell.animate([{ opacity: 1 }, { opacity: 0 }], options)
+      const titleFade = title?.animate([{ opacity: 1 }, { opacity: 0 }], options)
+      const editorFade = editor.animate([{ opacity: 0 }, { opacity: 1 }], options)
+      await Promise.all([motion.finished, fade.finished, titleFade?.finished, editorFade.finished])
+      editorFade.cancel()
+      editor.style.removeProperty('opacity')
     },
     dispose() { shell.remove(); title?.remove() },
   }
@@ -217,10 +224,10 @@ function notePointerEnd() {
   const id = suppressNoteClick
   if (id) setTimeout(() => { if (suppressNoteClick === id) suppressNoteClick = null }, 200)
 }
-function noteCardClick(id: string) {
+function noteCardClick(event: MouseEvent, id: string) {
   if (suppressNoteClick === id) { suppressNoteClick = null; return }
   if (selectionMode.value) toggleNoteSelection(id)
-  else void openNote(id)
+  else void openNote(id, event.currentTarget as HTMLElement)
 }
 function noteContextMenu(event: MouseEvent, id: string) {
   if (!mobileLayout.value) return
@@ -922,33 +929,28 @@ watch(workspaceAvailable, (available, wasAvailable) => {
   if (available && !wasAvailable) void loadWorkspaceAfterVaultOpen()
 })
 
-async function openNote(noteId: string) {
+async function openNote(noteId: string, sourceCard: HTMLElement) {
   clearSelection()
   if (!workspaceAvailable.value) return
-  const sourceCard = mobileLayout.value ? noteCard(noteId) : null
-  const flight = sourceCard ? noteFlight(sourceCard) : null
-  if (activeNote.value?.id === noteId) {
-    await flight?.finished
-    mobilePane.value = 'editor'
-    await nextTick()
-    if (flight) await afterPaint()
-    await flight?.reveal()
-    flight?.dispose()
-    return
-  }
   await runTransition(async () => {
-    const summary = snapshot.value?.notes.find((item) => item.id === noteId)
-    if (!summary || summary.privacy !== (filterKey.value === 'private' ? 'private' : 'normal')) return
-    const note = await platform.repository.getNote(noteId)
-    if (!workspaceAvailable.value || note.privacy !== summary.privacy) return
-    await Promise.all([flight?.finished, note.kind === 'richtext' ? import('./components/RichTextEditor.vue') : import('./components/MindMapEditor.vue')])
-    resetDraftState(note)
+    if (activeNote.value?.id !== noteId) {
+      const summary = snapshot.value?.notes.find((item) => item.id === noteId)
+      if (!summary || summary.privacy !== (filterKey.value === 'private' ? 'private' : 'normal')) return
+      const note = await platform.repository.getNote(noteId)
+      if (!workspaceAvailable.value || note.privacy !== summary.privacy) return
+      await (note.kind === 'richtext' ? import('./components/RichTextEditor.vue') : import('./components/MindMapEditor.vue'))
+      resetDraftState(note)
+      await nextTick()
+    }
+    const flight = mobileLayout.value ? noteFlight(sourceCard) : null
+    const editor = flight ? document.querySelector<HTMLElement>('.editor-pane') : null
+    if (editor) editor.style.opacity = '0'
     mobilePane.value = 'editor'
     await nextTick()
     if (flight) await afterPaint()
-    await flight?.reveal()
+    if (editor) await flight?.reveal(editor)
+    flight?.dispose()
   })
-  flight?.dispose()
 }
 
 async function createNote(kind: NoteKind = 'richtext') {
@@ -1385,7 +1387,7 @@ onBeforeUnmount(() => {
 
       <div v-if="isLoading" class="list-loading" role="status"><span class="loading-orbit"></span><span>正在打开本地笔记…</span></div>
       <div v-else-if="filteredNotes.length" class="note-list">
-        <button v-for="note in filteredNotes" :key="note.id" class="note-card" :data-note-id="note.id" :class="{ selected: !selectionMode && activeNote?.id === note.id, 'multi-selected': selectedNoteIds.has(note.id) }" :aria-pressed="selectionMode ? selectedNoteIds.has(note.id) : undefined" :disabled="isTransitioning" @pointerdown="notePointerDown($event, note.id)" @pointermove="notePointerMove" @pointerup="notePointerEnd" @pointercancel="notePointerEnd" @contextmenu="noteContextMenu($event, note.id)" @click="noteCardClick(note.id)">
+        <button v-for="note in filteredNotes" :key="note.id" class="note-card" :data-note-id="note.id" :class="{ selected: !selectionMode && activeNote?.id === note.id, 'multi-selected': selectedNoteIds.has(note.id) }" :aria-pressed="selectionMode ? selectedNoteIds.has(note.id) : undefined" :disabled="isTransitioning" @pointerdown="notePointerDown($event, note.id)" @pointermove="notePointerMove" @pointerup="notePointerEnd" @pointercancel="notePointerEnd" @contextmenu="noteContextMenu($event, note.id)" @click="noteCardClick($event, note.id)">
           <span v-if="selectionMode" class="note-selection-mark"><Check v-if="selectedNoteIds.has(note.id)" :size="16" /></span>
           <span class="note-card-icon"><Workflow v-if="note.kind === 'mindmap'" :size="17" /><FileText v-else :size="17" /></span>
           <span class="note-card-content">
