@@ -70,6 +70,7 @@ export interface WorkspaceRepository {
 export interface AttachmentStore {
   importImage(file: File): Promise<Attachment>
   resolveImage(id: string): Promise<string>
+  readImage(id: string): Promise<Blob>
 }
 
 export interface PlatformCapabilities {

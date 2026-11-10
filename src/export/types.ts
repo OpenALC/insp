@@ -1,7 +1,7 @@
 import type { Note } from '../domain/models'
 
-/** Return local bytes, a data URL, or a blob URL. Network URLs are never loaded. */
-export type AttachmentResolver = (attachmentId: string) => Blob | string | Promise<Blob | string>
+/** Return decrypted local image bytes. */
+export type AttachmentResolver = (attachmentId: string) => Blob | Promise<Blob>
 
 export interface ExportOptions {
   /** Include the note title. A matching mind map root is included only once. Default: true. */
@@ -26,7 +26,6 @@ export interface ExportFile {
 export type ExportErrorCode =
   | 'UNSUPPORTED_CONTENT'
   | 'MISSING_ATTACHMENT'
-  | 'UNSAFE_IMAGE_SOURCE'
   | 'UNSUPPORTED_IMAGE'
   | 'IMAGE_DECODE_FAILED'
   | 'CANVAS_UNAVAILABLE'

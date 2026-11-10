@@ -11,7 +11,7 @@ import {
 } from './export'
 
 // Wrap the existing AttachmentStore so its receiver is preserved.
-const resolveAttachment: AttachmentResolver = id => platform.attachments.resolveImage(id)
+const resolveAttachment: AttachmentResolver = id => platform.attachments.readImage(id)
 
 const text: string = toPlainText(note)
 const png: ExportFile = await toPng(note, resolveAttachment)
@@ -41,14 +41,14 @@ const file = new File([result.blob], result.filename, { type: result.mimeType })
 - Common options: `{ includeTitle?: boolean }`, defaulting to `true`. A matching
   mind map title/root appears once; the root is always content, even with
   `includeTitle: false`. Distinct legacy titles and roots are both retained.
-- `AttachmentResolver` accepts an attachment ID and returns a `Blob`, local `blob:`
-  URL, or base64 image data URL, synchronously or asynchronously. The current
-  `AttachmentStore.resolveImage` is directly compatible through the wrapper above.
+- `AttachmentResolver` accepts an attachment ID and returns decrypted local image
+  bytes as a `Blob`, synchronously or asynchronously. The current
+  `AttachmentStore.readImage` is directly compatible through the wrapper above.
   PNG, JPEG, GIF, and WebP bytes are supported. Blob MIME labels are normalized from
   the file signature. Resolver errors, including vault access errors, propagate.
 - Each asynchronous call snapshots title and content into detached export blocks
   before its first await. Repeated image references are resolved once per call.
-  The caller owns resolver-returned URLs; only URLs created by this layer are revoked.
+  Only temporary URLs created by this layer are revoked.
 
 ## Content and output details
 

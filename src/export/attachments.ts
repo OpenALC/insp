@@ -19,19 +19,7 @@ export function attachmentLoader(resolve: AttachmentResolver): (id: string) => P
   return id => {
     let pending = cache.get(id)
     if (!pending) {
-      pending = Promise.resolve(resolve(id)).then(async value => {
-        let blob: Blob
-        if (typeof value === 'string') {
-          // Loading arbitrary URLs or SVG can initiate external requests from a private note.
-          if (!value.startsWith('blob:') && !/^data:image\/(png|jpeg|gif|webp);base64,/i.test(value)) {
-            throw new NoteExportError('UNSAFE_IMAGE_SOURCE', `Attachment ${id} must resolve to local raster image bytes.`)
-          }
-          const response = await fetch(value)
-          if (!response.ok) throw new NoteExportError('MISSING_ATTACHMENT', `Cannot read attachment ${id}.`)
-          blob = await response.blob()
-        } else blob = value
-        return rasterBlob(blob)
-      })
+      pending = Promise.resolve(resolve(id)).then(rasterBlob)
       cache.set(id, pending)
     }
     return pending

@@ -4,7 +4,7 @@ import type { Attachment, Note, NoteGroup } from '../domain/models'
 import { type MindMapDocument, UNTITLED_MIND_MAP } from '../domain/mindmap.ts'
 import type { NativeInvoke } from '../platform/native'
 import type { CipherEnvelope, RemoteChange, SyncMutation } from '../sync/contracts'
-import { decryptValue, unlockVault, type VaultHeader } from './crypto.ts'
+import { decodeBase64, decryptValue, unlockVault, type VaultHeader } from './crypto.ts'
 import { EncryptedWorkspace } from './workspace.ts'
 
 const PASSWORD = 'workspace test passphrase'
@@ -879,10 +879,13 @@ test('hiding privacy invalidates a pending PIN verification and prevents private
   instance.hidePrivate()
   await assert.rejects(pending, /隐私区已锁定/)
   await assert.rejects(instance.platform.attachments.resolveImage('private-image'), /解锁隐私/)
+  await assert.rejects(instance.platform.attachments.readImage('private-image'), /解锁隐私/)
   await instance.revealPrivate('864209')
   assert.match(await instance.platform.attachments.resolveImage('private-image'), /^blob:/)
+  assert.deepEqual(await instance.platform.attachments.readImage('private-image').then(blob => blob.arrayBuffer()), decodeBase64(IMAGE_BASE64).buffer)
   instance.hidePrivate()
   await assert.rejects(instance.platform.attachments.resolveImage('private-image'), /解锁隐私/)
+  await assert.rejects(instance.platform.attachments.readImage('private-image'), /解锁隐私/)
   assert.equal(instance.state.locked, false)
   await instance.platform.repository.createNote(null)
   await instance.lock()

@@ -99,6 +99,7 @@ const batchGroupOpen = ref(false)
 const noteChoice = ref<'group' | 'privacy' | 'sync' | 'export' | null>(null)
 const exportBusy = ref(false)
 const exportStatus = ref('')
+const exportClosing = ref(false)
 const listMenuOpen = ref(false)
 const newNoteFocus = ref(false)
 const privacyCovered = ref(false)
@@ -247,9 +248,19 @@ async function openNoteOptions() {
   optionsRestingHeight.value = mobileLayout.value && keyboardVisible.value ? fullViewportHeight : 0
   noteChoice.value = null
   exportStatus.value = ''
+  exportClosing.value = false
   noteSettingsOpen.value = true
   await nextTick()
   optionsPanel.value?.focus({ preventScroll: true })
+}
+
+async function closeNoteOptionsForExport() {
+  exportClosing.value = true
+  await nextTick()
+  await Promise.all((optionsPanel.value?.getAnimations() ?? []).map(animation => animation.finished))
+  noteSettingsOpen.value = false
+  exportClosing.value = false
+  await nextTick()
 }
 
 async function exportCurrentNote(format: 'png' | 'plaintext' | 'markdown' | 'docx' | 'pdf') {
@@ -262,13 +273,15 @@ async function exportCurrentNote(format: 'png' | 'plaintext' | 'markdown' | 'doc
     const note = activeNote.value
     if (!note) return
     if (note.privacy === 'private' && !vault.state.privateVisible) throw new Error('请先解锁隐私笔记。')
-    const resolveAttachment = (id: string) => platform.attachments.resolveImage(id)
+    const resolveAttachment = (id: string) => platform.attachments.readImage(id)
     if (format === 'plaintext') {
       const content = await exportNote(note, 'plaintext', resolveAttachment)
+      await closeNoteOptionsForExport()
       const result = await shareNoteText(content, note.title)
       exportStatus.value = result === 'shared' ? '已复制正文并打开系统分享' : '已复制正文'
     } else {
       const file: ExportFile = await exportNote(note, format, resolveAttachment)
+      await closeNoteOptionsForExport()
       if (format === 'png') {
         const result = await shareNoteImage(file)
         exportStatus.value = result === 'shared' ? '已打开系统图片分享' : '图片已复制到剪贴板'
@@ -1366,7 +1379,7 @@ onBeforeUnmount(() => {
     <div v-if="privacyCovered" class="privacy-cover"><LockKeyhole :size="34" /><span>隐私笔记已隐藏</span><button class="action-secondary" @click="vaultPanelMode = 'privacy'">验证后继续</button></div>
     <div v-if="listMenuOpen" class="sheet-backdrop" @click.self="listMenuOpen = false"><section class="bottom-sheet" role="dialog" aria-modal="true" aria-label="笔记操作"><div class="sheet-grabber"></div><button class="sheet-action" @click="listMenuOpen = false; showGroupDialog({ mode: 'create' })"><FolderPlus :size="22" />新建分组</button><button class="sheet-action" @click="listMenuOpen = false; openPrivateArea()"><LockKeyhole :size="22" />隐私笔记</button><button class="sheet-cancel" @click="listMenuOpen = false">取消</button></section></div>
     <div v-if="batchGroupOpen" class="sheet-backdrop" @click.self="batchGroupOpen = false"><section class="bottom-sheet" role="dialog" aria-modal="true" aria-label="移动所选笔记到分组"><div class="sheet-grabber"></div><h2>移动到</h2><button class="sheet-action" :disabled="isTransitioning" @click="moveSelectedNotes(null)"><Inbox :size="21" />未分组</button><button v-for="group in groups" :key="group.id" class="sheet-action" :disabled="isTransitioning" @click="moveSelectedNotes(group.id)"><Folder :size="21" />{{ group.name }}</button><button class="sheet-cancel" @click="batchGroupOpen = false">取消</button></section></div>
-    <div v-if="noteSettingsOpen && activeNote" class="sheet-backdrop note-options-backdrop" :class="{ 'dismissing-keyboard': optionsRestingHeight > 0 }" :style="viewportHeight < optionsRestingHeight ? { height: optionsRestingHeight + 'px' } : undefined" @click.self="noteSettingsOpen = false"><section ref="optionsPanel" class="bottom-sheet note-options" tabindex="-1" role="dialog" aria-modal="true" aria-label="笔记设置"><div class="sheet-grabber"></div><h2 v-if="noteChoice === null">笔记选项</h2>
+    <div v-if="noteSettingsOpen && activeNote" class="sheet-backdrop note-options-backdrop" :class="{ 'dismissing-keyboard': optionsRestingHeight > 0, 'closing-for-export': exportClosing }" :style="viewportHeight < optionsRestingHeight ? { height: optionsRestingHeight + 'px' } : undefined" @click.self="noteSettingsOpen = false"><section ref="optionsPanel" class="bottom-sheet note-options" tabindex="-1" role="dialog" aria-modal="true" aria-label="笔记设置"><div class="sheet-grabber"></div><h2 v-if="noteChoice === null">笔记选项</h2>
           <template v-if="noteChoice === null">
             <button class="sheet-action choice-trigger" :disabled="isTransitioning" @click="noteChoice = 'group'"><Folder :size="21" /><span>移动到</span><span class="choice-value">{{ activeGroupName }}</span><ChevronRight :size="18" /></button>
             <button class="sheet-action choice-trigger" :disabled="isTransitioning" @click="noteChoice = 'privacy'"><Shield :size="21" /><span>隐私</span><span class="choice-value">{{ activeNote.privacy === 'private' ? '隐私笔记' : '普通笔记' }}</span><ChevronRight :size="18" /></button>

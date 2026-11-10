@@ -220,17 +220,13 @@ export class EncryptedWorkspace implements VaultController {
           await this.queue
           this.requireKey()
           this.requireImageAccess(id)
-          const epoch = this.epoch
           const previous = this.urls.get(id)
           if (previous) return previous
-          const entity = await this.readEntity('attachment:' + id)
-          if (epoch !== this.epoch || this.state.locked) throw new Error('加密空间已锁定。')
-          this.requireImageAccess(id)
-          if (entity.type !== 'attachment') throw new Error('图片附件不存在。')
-          const url = URL.createObjectURL(new Blob([decodeBase64(entity.value.dataBase64)], { type: entity.value.mimeType }))
+          const url = URL.createObjectURL(await this.imageBlob(id))
           this.urls.set(id, url)
           return url
         },
+        readImage: id => this.imageBlob(id),
       },
     }
   }
@@ -298,6 +294,18 @@ export class EncryptedWorkspace implements VaultController {
     if (!this.state.privateVisible && references.length && references.every(note => note.privacy === 'private' || note.deletedAt)) {
       throw new Error('请先解锁隐私笔记。')
     }
+  }
+
+  private async imageBlob(id: string): Promise<Blob> {
+    await this.queue
+    this.requireKey()
+    this.requireImageAccess(id)
+    const epoch = this.epoch
+    const entity = await this.readEntity('attachment:' + id)
+    if (epoch !== this.epoch || this.state.locked) throw new Error('加密空间已锁定。')
+    this.requireImageAccess(id)
+    if (entity.type !== 'attachment') throw new Error('图片附件不存在。')
+    return new Blob([decodeBase64(entity.value.dataBase64)], { type: entity.value.mimeType })
   }
 
   private async readEntity(id: string): Promise<Entity> {
