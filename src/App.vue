@@ -83,17 +83,55 @@ const vaultInitError = ref('')
 const draftPlainText = ref('')
 const mobilePane = ref<'list' | 'editor'>('list')
 const sidebarOpen = ref(false)
-const noteRevealStyle = ref<Record<string, string>>({})
-function setNoteRevealOrigin(id: string) {
-  const card = Array.from(document.querySelectorAll<HTMLElement>('.note-card')).find(item => item.dataset.noteId === id)
-  if (!card) return
-  const rect = card.getBoundingClientRect()
-  noteRevealStyle.value = {
-    '--note-origin-top': `${Math.max(0, rect.top)}px`,
-    '--note-origin-right': `${Math.max(0, innerWidth - rect.right)}px`,
-    '--note-origin-bottom': `${Math.max(0, innerHeight - rect.bottom)}px`,
-    '--note-origin-left': `${Math.max(0, rect.left)}px`,
+function noteCard(id: string, reveal = false): HTMLElement | null {
+  const card = document.querySelector<HTMLElement>(`.note-card[data-note-id="${CSS.escape(id)}"]`)
+  if (card && reveal) {
+    const list = card.closest<HTMLElement>('.note-list-pane')!
+    const cardBounds = card.getBoundingClientRect()
+    const listBounds = list.getBoundingClientRect()
+    if (cardBounds.top < listBounds.top || cardBounds.bottom > listBounds.bottom) card.scrollIntoView({ block: 'center', behavior: 'instant' })
   }
+  return card
+}
+
+function noteFlight(card: HTMLElement, closing = false) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return null
+  const rect = card.getBoundingClientRect()
+  const shell = document.createElement('div')
+  shell.className = 'note-flight'
+  Object.assign(shell.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` })
+  const content = card.cloneNode(true) as HTMLElement
+  content.classList.remove('selected', 'multi-selected')
+  content.classList.add('note-flight-card')
+  content.removeAttribute('data-note-id')
+  content.setAttribute('aria-hidden', 'true')
+  content.tabIndex = -1
+  shell.append(content)
+  document.body.append(shell)
+  const pageHeight = keyboardVisible.value ? fullViewportHeight : innerHeight
+  const expanded = `translate(${-rect.left}px, ${-rect.top}px) scale(${innerWidth / rect.width}, ${pageHeight / rect.height})`
+  const compactFrame = { transform: 'translate(0, 0) scale(1)', borderRadius: '18px', opacity: 1 }
+  const expandedFrame = { transform: expanded, borderRadius: '0px', opacity: 1 }
+  const frames = closing
+    ? [{ ...expandedFrame, opacity: 0 }, { ...expandedFrame, opacity: 1, offset: .18 }, compactFrame]
+    : [compactFrame, expandedFrame]
+  const motion = shell.animate(frames, { duration: 330, easing: 'cubic-bezier(.22, 1, .36, 1)', fill: 'forwards' })
+  content.animate(closing
+    ? [{ opacity: 0 }, { opacity: 0, offset: .68 }, { opacity: 1 }]
+    : [{ opacity: 1 }, { opacity: 0, offset: .16 }, { opacity: 0 }],
+  { duration: 330, easing: 'ease-out', fill: 'forwards' })
+  return {
+    finished: motion.finished.then(() => undefined, () => undefined),
+    async reveal() {
+      const fade = shell.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 90, easing: 'ease-out', fill: 'forwards' })
+      await fade.finished
+    },
+    dispose() { shell.remove() },
+  }
+}
+
+function afterPaint(): Promise<void> {
+  return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
 }
 const mobileEditing = ref(false)
 const canCreateMindNote = computed(() => activeNote.value?.kind === 'richtext' && isEmptyRichText(activeNote.value.content))
@@ -867,19 +905,30 @@ watch(workspaceAvailable, (available, wasAvailable) => {
 async function openNote(noteId: string) {
   clearSelection()
   if (!workspaceAvailable.value) return
+  const sourceCard = mobileLayout.value ? noteCard(noteId) : null
+  const flight = sourceCard ? noteFlight(sourceCard) : null
   if (activeNote.value?.id === noteId) {
+    await flight?.finished
     mobilePane.value = 'editor'
+    await nextTick()
+    if (flight) await afterPaint()
+    await flight?.reveal()
+    flight?.dispose()
     return
   }
-  if (mobileLayout.value) setNoteRevealOrigin(noteId)
   await runTransition(async () => {
     const summary = snapshot.value?.notes.find((item) => item.id === noteId)
     if (!summary || summary.privacy !== (filterKey.value === 'private' ? 'private' : 'normal')) return
     const note = await platform.repository.getNote(noteId)
     if (!workspaceAvailable.value || note.privacy !== summary.privacy) return
+    await Promise.all([flight?.finished, note.kind === 'richtext' ? import('./components/RichTextEditor.vue') : import('./components/MindMapEditor.vue')])
     resetDraftState(note)
     mobilePane.value = 'editor'
+    await nextTick()
+    if (flight) await afterPaint()
+    await flight?.reveal()
   })
+  flight?.dispose()
 }
 
 async function createNote(kind: NoteKind = 'richtext') {
@@ -1062,8 +1111,19 @@ function chooseFilter(key: string) {
 }
 
 async function showNoteList() {
-  if (activeNote.value && mobileLayout.value) setNoteRevealOrigin(activeNote.value.id)
-  await runTransition(async () => { mobilePane.value = 'list'; noteSettingsOpen.value = false })
+  await runTransition(async () => {
+    const card = activeNote.value && mobileLayout.value ? noteCard(activeNote.value.id, true) : null
+    const flight = card ? noteFlight(card, true) : null
+    const editor = document.querySelector<HTMLElement>('.editor-pane')
+    const fade = flight && editor ? editor.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 100, easing: 'ease-out', fill: 'forwards' }) : null
+    await flight?.finished
+    mobilePane.value = 'list'
+    noteSettingsOpen.value = false
+    await nextTick()
+    if (flight) await afterPaint()
+    fade?.cancel()
+    flight?.dispose()
+  })
 }
 
 function navigateBack(event: Event) {
@@ -1335,7 +1395,7 @@ onBeforeUnmount(() => {
     <div class="floating-compose" :class="{ compact: listScrolling }" aria-label="创建笔记"><button class="compose-main" aria-label="新建普通笔记" :disabled="isTransitioning" @click="createNote('richtext')"><Plus :size="27" /><span>笔记</span></button><span class="compose-separator"></span><button aria-label="新建灵感笔记" :disabled="isTransitioning" @click="createNote('mindmap')"><Workflow :size="24" /><span>灵感笔记</span></button></div>
     <div v-if="selectionMode" class="batch-actions" role="toolbar" aria-label="多选笔记操作"><button :disabled="!selectedNoteIds.size || isTransitioning" @click="batchGroupOpen = true"><Folder :size="21" />移动到</button><button class="danger" :disabled="!selectedNoteIds.size || isTransitioning" @click="deleteSelectedNotes"><Trash2 :size="21" />删除</button></div>
 
-    <main class="editor-pane" :style="noteRevealStyle">
+    <main class="editor-pane">
       <div v-if="actionError && showError" class="error-banner" role="alert">
         <CircleAlert :size="17" />
         <span>{{ actionError }}</span>

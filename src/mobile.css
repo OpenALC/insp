@@ -122,7 +122,7 @@ button.settings-row { cursor: pointer; }
   .sidebar .group-select .nav-count { display: none; }
   .sidebar .sidebar-bottom { display: flex; justify-content: flex-start; padding: 18px 0 0; border: 0; }
   .sidebar-settings { font-size: 16px; }
-  .note-list-pane { display: block; flex: 1; min-height: 0; overflow-y: auto; padding: 0 22px calc(112px + var(--safe-bottom)); border: 0; background: var(--app-bg); overscroll-behavior: contain; transition: transform .34s var(--motion-out), opacity .25s; }
+  .note-list-pane { display: block; flex: 1; min-height: 0; overflow-y: auto; padding: 0 22px calc(112px + var(--safe-bottom)); border: 0; background: var(--app-bg); overscroll-behavior: contain; }
   .note-list-pane .eyebrow, .note-list-pane .create-actions { display: none; }
   .list-pane-header { padding: 4px 5px 0; margin: 0; }
   .list-pane-header h1 { max-width: none; margin: 0 0 20px; font-size: 36px; font-weight: 650; letter-spacing: -.05em; }
@@ -169,9 +169,9 @@ button.settings-row { cursor: pointer; }
   .list-empty > span { font-size: 14px; line-height: 1.8; }
   .empty-create-button { display: none; }
   .empty-illustration { width: 70px; height: 70px; border: 0; border-radius: 23px; background: var(--paper); }
-  .editor-pane { position: absolute; z-index: 30; inset: 0; display: flex; flex: 1; min-height: 0; padding: var(--safe-top) calc(24px + var(--safe-right)) var(--safe-bottom) calc(24px + var(--safe-left)); background: var(--paper); visibility: hidden; opacity: .9; clip-path: inset(var(--note-origin-top, 35%) var(--note-origin-right, 20%) var(--note-origin-bottom, 35%) var(--note-origin-left, 20%) round 18px); transition: clip-path .38s var(--motion-out), opacity .32s ease, visibility .38s; }
-  .mobile-editor-open .editor-pane { visibility: visible; opacity: 1; clip-path: inset(0 0 0 0 round 0); }
-  .mobile-editor-open .note-list-pane { opacity: .75; pointer-events: none; }
+  .editor-pane { position: absolute; z-index: 30; inset: 0; display: flex; flex: 1; min-height: 0; padding: var(--safe-top) calc(24px + var(--safe-right)) var(--safe-bottom) calc(24px + var(--safe-left)); background: var(--paper); visibility: hidden; }
+  .mobile-editor-open .editor-pane { visibility: visible; }
+  .mobile-editor-open .note-list-pane { pointer-events: none; }
   .mobile-editor-open .floating-compose { visibility: hidden; }
   .mobile-editor-open .mobile-header { visibility: hidden; }
   .editor-topbar { min-height: 62px; justify-content: flex-start; gap: 8px; border: 0; }
@@ -222,6 +222,8 @@ button.settings-row { cursor: pointer; }
   .dialog-actions button { height: 44px; font-size: 15px; }
   .settings-row:disabled { opacity: .5; }
 }
+.note-flight { position: fixed; z-index: 120; overflow: hidden; color: var(--ink); background: var(--paper); transform-origin: 0 0; pointer-events: none; backface-visibility: hidden; }
+.note-flight .note-flight-card { width: 100%; margin: 0; border: 0; box-shadow: none; pointer-events: none; }
 @media (max-width:350px) { .note-list { columns: 1; } .floating-compose button { padding: 0 14px; } }
 @media (hover:none) {
   .icon-button:hover, .sidebar-add:hover, .dialog-close:hover { background: transparent; }
