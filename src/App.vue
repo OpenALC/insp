@@ -1055,8 +1055,9 @@ async function exportToNative() {
     await flushSaves()
     const loaded = await platform.repository.loadWorkspace()
     const archive = await exportWorkspaceForNative(loaded, platform)
-    await saveNoteExport(archive)
-    transferStatus.value = `已导出 ${loaded.notes.length} 篇笔记。迁移文件包含明文，请妥善保管。`
+    transferStatus.value = await saveNoteExport(archive)
+      ? `已导出 ${loaded.notes.length} 篇笔记。迁移文件包含明文，请妥善保管。`
+      : '已取消导出'
   } catch (error) {
     transferStatus.value = error instanceof Error ? error.message : String(error)
   }
