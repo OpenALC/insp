@@ -17,6 +17,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:document': [content: MindMapDocument, plainText: string]
+  'edit-request': []
 }>()
 
 type ViewMode = 'outline' | 'tree'
@@ -310,10 +311,22 @@ function adjustZoom(delta: number) {
   void setZoom(Math.round((zoom.value + delta) * 100) / 100)
 }
 
+function beginEdit(event: PointerEvent) {
+  if (props.editable) return
+  const field = (event.target as HTMLElement).closest('textarea') as HTMLTextAreaElement | null
+  if (!field) return
+  event.preventDefault()
+  emit('edit-request')
+  void nextTick(() => {
+    field.focus()
+    field.setSelectionRange(field.value.length, field.value.length)
+  })
+}
+
 </script>
 
 <template>
-  <section ref="editorElement" class="mindmap-editor" :data-editable="editable" aria-label="灵感笔记编辑器">
+  <section ref="editorElement" class="mindmap-editor" :data-editable="editable" aria-label="灵感笔记编辑器" @pointerdown="beginEdit">
 
     <div ref="viewport" v-if="viewMode === 'outline'" class="mindmap-outline-viewport content-zoom-viewport">
       <div class="content-zoom-extent" :style="extentStyle">

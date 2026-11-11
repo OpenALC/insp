@@ -1028,8 +1028,8 @@ async function createNote(kind: NoteKind = 'richtext') {
     }
     if (snapshot.value) snapshot.value = { ...snapshot.value, notes: [summaryFromNote(note), ...snapshot.value.notes] }
     resetDraftState(note)
-    mobileEditing.value = mobileLayout.value && kind === 'richtext'
-    newNoteFocus.value = mobileEditing.value
+    mobileEditing.value = mobileLayout.value
+    newNoteFocus.value = mobileEditing.value && kind === 'richtext'
     mobilePane.value = 'editor'
   })
 }
@@ -1508,7 +1508,7 @@ onBeforeUnmount(() => {
           <input v-if="mobileLayout" v-model="editorTitle" class="topbar-note-title" :placeholder="titlePlaceholder" aria-label="笔记标题" :disabled="isTransitioning" @focus="mobileEditing = true" />
           <div v-else class="breadcrumb"><span>拾页</span><ChevronRight :size="14" /><span>{{ activeGroupName }}</span><ChevronRight :size="14" /><span class="breadcrumb-current">笔记</span></div>
           <div v-if="mobileEditing && activeNote.kind === 'richtext'" class="mobile-history"><button class="icon-button" aria-label="撤销编辑" :disabled="!richEditor?.canUndo" @pointerdown.prevent @click="richEditor?.undo()"><Undo2 :size="22" /></button><button class="icon-button" aria-label="重做编辑" :disabled="!richEditor?.canRedo" @pointerdown.prevent @click="richEditor?.redo()"><Redo2 :size="22" /></button></div>
-          <button v-if="mobileEditing" class="mobile-done" @click="finishMobileEditing">完成</button>
+          <button v-if="mobileEditing" class="mobile-done icon-button" type="button" aria-label="完成编辑" title="完成编辑" @pointerdown.prevent @click="finishMobileEditing"><Check :size="23" /></button>
           <button v-if="activeNote.kind === 'mindmap'" class="icon-button mind-view-toggle" type="button" :disabled="!mindEditor" :aria-label="nextMindView === 'tree' ? '切换到思维树' : '切换到列表'" :title="nextMindView === 'tree' ? '切换到思维树' : '切换到列表'" @pointerdown.prevent @click="mindEditor?.switchView(nextMindView)"><Network v-if="nextMindView === 'tree'" :size="21" /><ListTree v-else :size="21" /></button>
           <button class="mobile-note-settings icon-button" type="button" aria-label="笔记设置" :aria-expanded="noteSettingsOpen" @pointerdown.prevent @click="openNoteOptions"><Settings2 :size="20" /></button>
         </header>
@@ -1538,7 +1538,8 @@ onBeforeUnmount(() => {
           @focusin="onMindmapFocus"
           :key="activeNote.id"
           :content="activeNote.content as MindMapDocument"
-          :editable="!isTransitioning"
+          :editable="!isTransitioning && (!mobileLayout || mobileEditing)"
+          @edit-request="mobileEditing = true"
           @update:document="updateDocument"
         />
 

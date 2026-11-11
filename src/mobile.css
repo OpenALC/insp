@@ -195,7 +195,7 @@ button.settings-row { cursor: pointer; }
   .mobile-history { display: flex; gap: 3px; margin-left: auto; }
   .mobile-history .icon-button { width: 40px; height: 44px; }
   .mobile-history .icon-button:disabled { opacity: .35; }
-  .mobile-done { display: block; min-height: 44px; padding: 0 9px; color: var(--ink); border: 0; background: transparent; font-size: 16px; font-weight: 600; }
+  .mobile-done { display: grid; width: 44px; height: 44px; place-items: center; padding: 0; color: var(--ink); border: 0; background: transparent; }
   .mobile-note-settings { width: 44px; height: 44px; margin-right: -10px; }
   .document-heading, .mobile-writing .document-heading { display: flex; flex: 0 0 auto; padding: 4px 0 8px; }
   .document-title { order: 0; font-size: 29px; font-weight: 650; letter-spacing: -.04em; line-height: 1.45; }
