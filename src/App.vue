@@ -261,6 +261,7 @@ function toggleNoteSelection(id: string) {
   const next = new Set(selectedNoteIds.value)
   if (next.has(id)) next.delete(id)
   else next.add(id)
+  if (next.size === 0) { clearSelection(); return }
   selectedNoteIds.value = next
 }
 function startNoteSelection(id: string) {
@@ -1390,7 +1391,7 @@ onBeforeUnmount(() => {
       <template v-if="selectionMode">
         <button class="icon-button" type="button" aria-label="退出多选" @click="clearSelection"><X :size="24" /></button>
         <strong class="selection-count">已选 {{ selectedNoteIds.size }} 项</strong>
-        <button class="select-all-button" type="button" @click="selectedNoteIds = selectedNoteIds.size === filteredNotes.length ? new Set() : new Set(filteredNotes.map((note) => note.id))">{{ selectedNoteIds.size === filteredNotes.length ? '取消全选' : '全选' }}</button>
+        <button class="select-all-button" type="button" @click="selectedNoteIds.size === filteredNotes.length ? clearSelection() : selectedNoteIds = new Set(filteredNotes.map((note) => note.id))">{{ selectedNoteIds.size === filteredNotes.length ? '取消全选' : '全选' }}</button>
       </template>
       <template v-else>
         <button class="icon-button" type="button" aria-label="打开分组导航" @click="sidebarOpen = true"><Menu :size="25" /></button>

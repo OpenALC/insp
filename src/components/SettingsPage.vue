@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import appInfo from '../../package.json'
 import type { VaultController } from '../security/types'
 import ThemeSelect from './ThemeSelect.vue'
+import SettingsChoice from './SettingsChoice.vue'
 import { ArrowLeft, ChevronRight, Cloud, Copy, Download, Fingerprint, Github, Info, LockKeyhole, ShieldCheck } from 'lucide-vue-next'
 const props = defineProps<{ vault: VaultController; layout: string; importStatus?: string; transferStatus?: string }>()
 const emit = defineEmits<{ close: []; privacy: []; sync: []; joined: []; layout: [value: string]; import: [files: File[]]; exportNative: [] }>()
@@ -60,7 +61,7 @@ async function copy() {
     <div :key="view" class="settings-scroll settings-content-in">
       <template v-if="view === 'main'">
         <h2>外观</h2>
-        <div class="settings-section"><ThemeSelect /><label class="settings-row"><span>笔记布局</span><select aria-label="笔记布局" :value="layout" @change="emit('layout', ($event.target as HTMLSelectElement).value)"><option value="grid">宫格</option><option value="list">列表</option></select></label></div>
+        <div class="settings-section"><ThemeSelect /><SettingsChoice label="笔记布局" :value="layout" :options="[{ value: 'grid', label: '宫格' }, { value: 'list', label: '列表' }]" @change="emit('layout', $event)" /></div>
         <h2>安全与隐私</h2>
         <div class="settings-section">
           <div class="settings-row"><ShieldCheck :size="20" /><span>普通笔记</span><span class="settings-value">直接打开 · 本地加密</span></div>

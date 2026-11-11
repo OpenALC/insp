@@ -1,20 +1,14 @@
 <script setup lang="ts">
 import { initializeTheme, setThemePreference, themePreference } from '../appearance'
+import SettingsChoice from './SettingsChoice.vue'
 
 initializeTheme()
 
-function changeTheme(event: Event) {
-  setThemePreference((event.target as HTMLSelectElement).value as typeof themePreference.value)
+function changeTheme(value: string) {
+  setThemePreference(value as typeof themePreference.value)
 }
 </script>
 
 <template>
-  <label class="theme-select">
-    <span>外观</span>
-    <select aria-label="外观模式" :value="themePreference" @change="changeTheme">
-      <option value="system">跟随系统</option>
-      <option value="light">浅色</option>
-      <option value="dark">深色</option>
-    </select>
-  </label>
+  <SettingsChoice label="外观" :value="themePreference" :options="[{ value: 'system', label: '跟随系统' }, { value: 'light', label: '浅色' }, { value: 'dark', label: '深色' }]" @change="changeTheme" />
 </template>
