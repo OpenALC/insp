@@ -184,3 +184,15 @@ pub async fn save_file<R: Runtime>(
 ) -> Result<bool, String> {
     Err("Windows 使用系统文件选择器。".into())
 }
+pub async fn schedule_todo<R: Runtime>(
+    _app: AppHandle<R>,
+    _id: String,
+    _text: String,
+    _remind_at: String,
+    _repeat: String,
+) -> Result<(), String> {
+    Ok(())
+}
+pub async fn cancel_todo<R: Runtime>(_app: AppHandle<R>, _id: String) -> Result<(), String> {
+    Ok(())
+}

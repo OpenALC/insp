@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 import type { JSONContent } from '@tiptap/core'
-import type { Attachment, Note, NoteGroup, PlatformAdapter, PlatformCapabilities } from '../domain/models'
+import type { Attachment, Note, NoteGroup, PlatformAdapter, PlatformCapabilities, TodoItem } from '../domain/models'
 import { createMindMapDocument, mindMapPreview, mindMapText, unifyMindMapTitle, UNTITLED_MIND_MAP, type MindMapDocument } from '../domain/mindmap.ts'
 import { isEmptyRichText, richTextCardPreview } from '../domain/note-content.ts'
 import type { NativeInvoke } from '../platform/native'
@@ -10,7 +10,7 @@ import type { VaultController, VaultState } from './types'
 
 type StoredNote = Note & { deletedAt: string | null }
 type StoredImage = Attachment & { dataBase64: string }
-type Entity = { type: 'note'; value: StoredNote } | { type: 'group'; value: NoteGroup } | { type: 'attachment'; value: StoredImage }
+type Entity = { type: 'note'; value: StoredNote } | { type: 'group'; value: NoteGroup } | { type: 'attachment'; value: StoredImage } | { type: 'todo'; value: TodoItem }
 type Row = { id: string; payload: string | null }
 type Receipt = { serverRevision: number; localVersion: number; exists: boolean }
 type Pending = SyncMutation & { localVersion: number; inFlight?: boolean }
@@ -132,6 +132,11 @@ export class EncryptedWorkspace implements VaultController {
     this.invoke = invoke
     this.platform = {
       capabilities: { platform: kind, encryptedStorage: true, sync: true },
+      todos: {
+        list: async () => { await this.queue; this.requireKey(); return copy(this.todos().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))) },
+        save: item => this.write(() => this.persist([{ type: 'todo', value: item }])),
+        delete: id => this.write(() => this.persist([], [`todo:${id}`])),
+      },
       repository: {
         loadWorkspace: async () => {
           await this.queue
@@ -284,6 +289,7 @@ export class EncryptedWorkspace implements VaultController {
   }
 
   private notes(): StoredNote[] { return [...this.entities.values()].flatMap(e => e.type === 'note' ? [e.value] : []) }
+  private todos(): TodoItem[] { return [...this.entities.values()].flatMap(e => e.type === 'todo' ? [e.value] : []) }
   private groups(): NoteGroup[] { return [...this.entities.values()].flatMap(e => e.type === 'group' ? [e.value] : []) }
   private note(id: string): StoredNote {
     this.requireKey()

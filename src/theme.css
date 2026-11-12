@@ -18,7 +18,7 @@
   --primary-hover: #70e83a;
   --brand-hover: var(--primary-hover);
   --brand-shadow: rgba(var(--shadow-rgb), .15);
-  --sidebar-bg: #eff7e9;
+  --sidebar-bg: #f7f8f5;
   --app-bg: #f1f4ee;
   --surface-soft: #f6f8f3;
   --paper: #fff;
@@ -49,7 +49,7 @@
   --brand-line: #668c54;
   --primary-bg: #244b1a;
   --primary-hover: #2f5a24;
-  --sidebar-bg: #182016;
+  --sidebar-bg: #1b201b;
   --app-bg: #111610;
   --surface-soft: #1e241e;
   --paper: #171b17;

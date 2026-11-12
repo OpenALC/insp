@@ -61,3 +61,15 @@ pub async fn save_file<R: Runtime>(
 ) -> Result<bool, String> {
     Err("此平台不支持导出文件。".into())
 }
+pub async fn schedule_todo<R: Runtime>(
+    _app: AppHandle<R>,
+    _id: String,
+    _text: String,
+    _remind_at: String,
+    _repeat: String,
+) -> Result<(), String> {
+    Err("此平台不支持待办提醒。".into())
+}
+pub async fn cancel_todo<R: Runtime>(_app: AppHandle<R>, _id: String) -> Result<(), String> {
+    Ok(())
+}

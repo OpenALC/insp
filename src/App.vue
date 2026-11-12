@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { JSONContent } from '@tiptap/core'
-import type { Note, NoteContent, NoteGroup, NoteKind, NoteSummary, NoteWrite, PrivacyMode, SyncPolicy, WorkspaceSnapshot } from './domain/models'
+import type { Note, NoteContent, NoteGroup, NoteKind, NoteSummary, NoteWrite, PrivacyMode, SyncPolicy, TodoItem, WorkspaceSnapshot } from './domain/models'
 import { mindMapPreview, mindMapText, UNTITLED_MIND_MAP, type MindMapDocument } from './domain/mindmap'
-import { platform, registerCloseGuard, vault, getDeviceInsets, setDeviceAppearance, shareNoteText, shareNoteImage, saveNoteExport } from './platform'
+import { platform, registerCloseGuard, vault, getDeviceInsets, setDeviceAppearance, shareNoteText, shareNoteImage, saveNoteExport, scheduleTodoReminder, cancelTodoReminder } from './platform'
 import { exportNote } from './export'
 import { exportWorkspaceForNative } from './export/workspace'
 import type { ExportFile } from './export'
@@ -11,6 +11,7 @@ import VaultPanel from './components/VaultPanel.vue'
 import SettingsPage from './components/SettingsPage.vue'
 import MindMapCardPreview from './components/MindMapCardPreview.vue'
 import RichTextCardPreview from './components/RichTextCardPreview.vue'
+import TodoPage from './components/TodoPage.vue'
 import { isEmptyRichText, richTextCardPreview } from './domain/note-content'
 const RichTextEditor = defineAsyncComponent(() => import('./components/RichTextEditor.vue'))
 const MindMapEditor = defineAsyncComponent(() => import('./components/MindMapEditor.vue'))
@@ -85,6 +86,10 @@ const vaultPanelMode = ref<'privacy' | null>(null)
 const vaultInitError = ref('')
 const draftPlainText = ref('')
 const mobilePane = ref<'list' | 'editor'>('list')
+const section = ref<'notes' | 'todos'>('notes')
+const todoItems = ref<TodoItem[]>([])
+const todoError = ref('')
+const todoPage = ref<InstanceType<typeof TodoPage> | null>(null)
 const sidebarOpen = ref(false)
 function noteCard(id: string, reveal = false): HTMLElement | null {
   const card = document.querySelector<HTMLElement>(`.note-card[data-note-id="${CSS.escape(id)}"]`)
@@ -1200,6 +1205,7 @@ async function deleteSelectedNotes() {
 }
 
 function chooseFilter(key: string) {
+  section.value = 'notes'
   clearSelection()
   if (filterKey.value === 'private' && key !== 'private') {
     void leavePrivateArea(key)
@@ -1208,6 +1214,33 @@ function chooseFilter(key: string) {
   filterKey.value = key
   sidebarOpen.value = false
   mobilePane.value = 'list'
+}
+
+async function openTodoPage() {
+  await flushBeforeClose()
+  todoItems.value = await platform.todos.list()
+  section.value = 'todos'
+  mobilePane.value = 'list'
+  sidebarOpen.value = false
+  clearSelection()
+}
+
+async function saveTodo(item: TodoItem) {
+  todoError.value = ''
+  try {
+    await platform.todos.save(item)
+    todoItems.value = await platform.todos.list()
+    await scheduleTodoReminder(item)
+  } catch (error) { todoError.value = error instanceof Error ? error.message : String(error) }
+}
+
+async function deleteTodo(id: string) {
+  todoError.value = ''
+  try {
+    await platform.todos.delete(id)
+    todoItems.value = await platform.todos.list()
+    await cancelTodoReminder(id)
+  } catch (error) { todoError.value = error instanceof Error ? error.message : String(error) }
 }
 
 async function showNoteList() {
@@ -1228,7 +1261,12 @@ async function showNoteList() {
 }
 
 function navigateBack(event: Event) {
-  if (batchGroupOpen.value) {
+  if (section.value === 'todos' && todoPage.value?.handleBack()) {
+    event.preventDefault()
+  } else if (section.value === 'todos') {
+    event.preventDefault()
+    section.value = 'notes'
+  } else if (batchGroupOpen.value) {
     event.preventDefault()
     batchGroupOpen.value = false
   } else if (selectionMode.value) {
@@ -1388,7 +1426,7 @@ onBeforeUnmount(() => {
     @retry="retryInitialize"
   />
   <div v-else class="notes-app" :class="{ 'mobile-editor-open': mobilePane === 'editor', 'sidebar-open': sidebarOpen, 'mobile-writing': mobileEditing, 'note-settings-open': noteSettingsOpen, 'keyboard-open': keyboardVisible, 'selecting-notes': selectionMode }" @pointerdown="onButtonPointerDown">
-    <header class="mobile-header">
+    <header v-if="section === 'notes'" class="mobile-header">
       <template v-if="selectionMode">
         <button class="icon-button" type="button" aria-label="退出多选" @click="clearSelection"><X :size="24" /></button>
         <strong class="selection-count">已选 {{ selectedNoteIds.size }} 项</strong>
@@ -1397,6 +1435,7 @@ onBeforeUnmount(() => {
       <template v-else>
         <button class="icon-button" type="button" aria-label="打开分组导航" @click="sidebarOpen = true"><Menu :size="25" /></button>
         <strong :class="{ visible: listScrolled }">{{ currentFilterName === '全部笔记' ? '笔记' : currentFilterName }}</strong>
+        <button v-if="listScrolled" class="mobile-todo-tab" @click="openTodoPage">待办</button>
         <button class="icon-button" type="button" :aria-label="listLayout === 'grid' ? '切换列表' : '切换宫格'" @click="setListLayout(listLayout === 'grid' ? 'list' : 'grid')"><List v-if="listLayout === 'grid'" :size="23" /><LayoutGrid v-else :size="22" /></button>
         <button class="icon-button" aria-label="更多操作" @click="listMenuOpen = true"><MoreHorizontal :size="25" /></button>
       </template>
@@ -1441,17 +1480,17 @@ onBeforeUnmount(() => {
       <div class="sidebar-bottom"><button class="sidebar-settings" type="button" @click="openSettings"><Settings2 :size="22" /><span>设置</span></button></div>
     </aside>
 
-    <section class="note-list-pane" :class="{ 'layout-list': listLayout === 'list' }" aria-label="笔记列表" @scroll="onListScroll" @touchstart.passive="onHomeTouchStart" @touchmove="onHomeTouchMove" @touchend="onHomeTouchEnd" @touchcancel="groupSwipe = undefined" @click.capture="onHomeClick">
+    <TodoPage v-if="section === 'todos'" ref="todoPage" :items="todoItems" :error="todoError" @back="section = 'notes'" @save="saveTodo" @delete="deleteTodo" />
+    <section v-if="section === 'notes'" class="note-list-pane" :class="{ 'layout-list': listLayout === 'list' }" aria-label="笔记列表" @scroll="onListScroll" @touchstart.passive="onHomeTouchStart" @touchmove="onHomeTouchMove" @touchend="onHomeTouchEnd" @touchcancel="groupSwipe = undefined" @click.capture="onHomeClick">
       <header class="list-pane-header">
         <button class="tablet-sidebar-toggle icon-button" aria-label="展开侧边栏" @click="sidebarOpen = true"><Menu :size="22" /></button>
         <div>
           <div class="eyebrow">拾页 / NOTES</div>
-          <h1>{{ currentFilterName === '全部笔记' ? '笔记' : currentFilterName }}</h1>
+          <div class="section-heading"><h1>{{ currentFilterName === '全部笔记' ? '笔记' : currentFilterName }}</h1><button class="todo-top-link" @click="openTodoPage">待办</button></div>
         </div>
         <div class="create-actions">
           <button class="create-note-button" type="button" aria-label="新建笔记" title="新建笔记" :disabled="isLoading || isTransitioning" @click="createNote('richtext')"><FilePlus2 :size="17" /><span>笔记</span></button>
           <button class="create-note-button create-map-button" type="button" aria-label="新建灵感笔记" title="新建灵感笔记" :disabled="isLoading || isTransitioning" @click="createNote('mindmap')"><Workflow :size="17" /><span>灵感笔记</span></button>
-          <button class="create-note-button create-todo-button" type="button" aria-label="新建待办清单" title="新建待办清单" :disabled="isLoading || isTransitioning" @click="createNote('todo')"><ListTodo :size="17" /><span>待办</span></button>
         </div>
       </header>
 
@@ -1495,10 +1534,10 @@ onBeforeUnmount(() => {
       </div>
 
     </section>
-    <div class="floating-compose" :class="{ compact: listScrolling }" aria-label="创建笔记"><button class="compose-main" aria-label="新建普通笔记" :disabled="isTransitioning" @click="createNote('richtext')"><Plus :size="27" /><span>笔记</span></button><span class="compose-separator"></span><button class="compose-map" aria-label="新建灵感笔记" :disabled="isTransitioning" @click="createNote('mindmap')"><Workflow :size="24" /><span>灵感笔记</span></button><span class="compose-separator"></span><button aria-label="新建待办清单" :disabled="isTransitioning" @click="createNote('todo')"><ListTodo :size="23" /><span>待办</span></button></div>
+    <div v-if="section === 'notes'" class="floating-compose" :class="{ compact: listScrolling }" aria-label="创建笔记"><button class="compose-main" aria-label="新建普通笔记" :disabled="isTransitioning" @click="createNote('richtext')"><Plus :size="27" /><span>笔记</span></button><span class="compose-separator"></span><button class="compose-map" aria-label="新建灵感笔记" :disabled="isTransitioning" @click="createNote('mindmap')"><Workflow :size="24" /><span>灵感笔记</span></button></div>
     <div v-if="selectionMode" class="batch-actions" role="toolbar" aria-label="多选笔记操作"><button :disabled="!selectedNoteIds.size || isTransitioning" @click="batchGroupOpen = true"><Folder :size="21" />移动到</button><button class="danger" :disabled="!selectedNoteIds.size || isTransitioning" @click="deleteSelectedNotes"><Trash2 :size="21" />删除</button></div>
 
-    <main class="editor-pane">
+    <main v-if="section === 'notes'" class="editor-pane">
       <div v-if="actionError && showError" class="error-banner" role="alert">
         <CircleAlert :size="17" />
         <span>{{ actionError }}</span>

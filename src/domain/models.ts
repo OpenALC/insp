@@ -7,6 +7,22 @@ export type NoteKind = 'richtext' | 'mindmap' | 'todo'
 export type PrivacyMode = 'normal' | 'private'
 export type SyncPolicy = 'localOnly' | 'sync'
 
+export interface TodoItem {
+  id: string
+  text: string
+  completed: boolean
+  remindAt: string | null
+  repeat: 'none' | 'daily' | 'weekly' | 'monthly'
+  createdAt: string
+  updatedAt: string
+}
+
+export interface TodoRepository {
+  list(): Promise<TodoItem[]>
+  save(item: TodoItem): Promise<void>
+  delete(id: string): Promise<void>
+}
+
 export interface NoteGroup {
   id: string
   name: string
@@ -82,6 +98,7 @@ export interface PlatformCapabilities {
 
 export interface PlatformAdapter {
   repository: WorkspaceRepository
+  todos: TodoRepository
   attachments: AttachmentStore
   capabilities: PlatformCapabilities
 }

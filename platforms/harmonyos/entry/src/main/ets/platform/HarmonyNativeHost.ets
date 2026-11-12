@@ -4,6 +4,8 @@ import { NotesRepository, NoteKind, NoteWrite, VaultCommitInput } from '../data/
 import { DeviceSecurity } from './DeviceSecurity';
 import { ShareExport, ExportFileArgs } from './ShareExport';
 import { common } from '@kit.AbilityKit';
+import { reminderAgentManager } from '@kit.BackgroundTasksKit';
+import { notificationManager } from '@kit.NotificationKit';
 
 interface BridgeRequest {
   id: string;
@@ -31,6 +33,18 @@ interface AppearanceArgs {
 
 interface ShareTextArgs {
   text: string;
+}
+
+interface TodoScheduleArgs {
+  id: string;
+  text: string;
+  remindAt: string;
+  repeat: string;
+}
+
+interface TodoReminderRecord {
+  id: string;
+  reminderId: number;
 }
 
 export interface DeviceInsets {
@@ -89,6 +103,7 @@ export class HarmonyNativeHost {
   private readonly controller: webview.WebviewController;
   private readonly security: DeviceSecurity;
   private readonly sharing: ShareExport;
+  private readonly context: common.UIAbilityContext;
   private vaultQueue: Promise<void> = Promise.resolve();
   private disposed: boolean = false;
 
@@ -97,6 +112,7 @@ export class HarmonyNativeHost {
     this.controller = controller;
     this.security = security;
     this.sharing = new ShareExport(context);
+    this.context = context;
   }
 
   close(): void {
@@ -154,6 +170,12 @@ export class HarmonyNativeHost {
         break;
       case 'device_save_file':
         result = await this.sharing.saveFile(request.args as ExportFileArgs);
+        break;
+      case 'device_schedule_todo':
+        await this.scheduleTodo(request.args as TodoScheduleArgs);
+        break;
+      case 'device_cancel_todo':
+        await this.cancelTodo((request.args as IdArgs).id);
         break;
       case 'load_workspace':
         result = await this.repository.loadWorkspace();
@@ -213,6 +235,40 @@ export class HarmonyNativeHost {
         throw new Error('不支持的本地操作：' + request.command);
     }
     return JSON.stringify(result);
+  }
+
+  private async todoReminders(): Promise<TodoReminderRecord[]> {
+    const data = await this.security.getSecret('device-todo-reminders-v1');
+    return data === null ? [] : JSON.parse(data) as TodoReminderRecord[];
+  }
+
+  private async cancelTodo(id: string): Promise<void> {
+    const records = await this.todoReminders();
+    const existing = records.find((item: TodoReminderRecord): boolean => item.id === id);
+    if (existing !== undefined) await reminderAgentManager.cancelReminder(existing.reminderId);
+    await this.security.setSecret('device-todo-reminders-v1', JSON.stringify(records.filter((item: TodoReminderRecord): boolean => item.id !== id)));
+  }
+
+  private async scheduleTodo(input: TodoScheduleArgs): Promise<void> {
+    await this.cancelTodo(input.id);
+    if (!await notificationManager.isNotificationEnabled()) await notificationManager.requestEnableNotification(this.context);
+    const date = new Date(input.remindAt);
+    const request: reminderAgentManager.ReminderRequestCalendar = {
+      reminderType: reminderAgentManager.ReminderType.REMINDER_TYPE_CALENDAR,
+      dateTime: { year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate(),
+        hour: date.getHours(), minute: date.getMinutes() },
+      title: input.text, content: '拾页 · 待办'
+    };
+    if (input.repeat === 'daily') request.daysOfWeek = [1, 2, 3, 4, 5, 6, 7];
+    if (input.repeat === 'weekly') request.daysOfWeek = [date.getDay() === 0 ? 7 : date.getDay()];
+    if (input.repeat === 'monthly') {
+      request.repeatMonths = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+      request.repeatDays = [date.getDate()];
+    }
+    const reminderId = await reminderAgentManager.publishReminder(request);
+    const records = await this.todoReminders();
+    records.push({ id: input.id, reminderId: reminderId });
+    await this.security.setSecret('device-todo-reminders-v1', JSON.stringify(records));
   }
 
   private async syncHttp(input: SyncHttpArgs): Promise<SyncHttpResponse> {

@@ -53,6 +53,14 @@ class ExportFileArgs {
     lateinit var base64: String
 }
 
+@InvokeArg
+class TodoScheduleArgs {
+    lateinit var id: String
+    lateinit var text: String
+    lateinit var remindAt: String
+    lateinit var repeat: String
+}
+
 @TauriPlugin
 class DevicePlugin(private val activity: Activity) : Plugin(activity) {
     private val secrets = DeviceSecrets(activity.applicationContext)
@@ -92,6 +100,28 @@ class DevicePlugin(private val activity: Activity) : Plugin(activity) {
             } catch (_: Exception) {
                 invoke.reject("无法写入设备安全存储。")
             }
+        }
+    }
+
+    @Command
+    fun scheduleTodo(invoke: Invoke) {
+        val args = invoke.parseArgs(TodoScheduleArgs::class.java)
+        storageExecutor.execute {
+            try {
+                DeviceTodoReminder.schedule(activity.applicationContext, args)
+                if (android.os.Build.VERSION.SDK_INT >= 33 && activity.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+                    activity.runOnUiThread { activity.requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 201) }
+                invoke.resolve()
+            } catch (error: Exception) { invoke.reject(error.message ?: "无法设置待办提醒") }
+        }
+    }
+
+    @Command
+    fun cancelTodo(invoke: Invoke) {
+        val id = invoke.parseArgs(SecretIdArgs::class.java).id
+        storageExecutor.execute {
+            try { DeviceTodoReminder.cancel(activity.applicationContext, id); invoke.resolve() }
+            catch (error: Exception) { invoke.reject(error.message ?: "无法取消待办提醒") }
         }
     }
 

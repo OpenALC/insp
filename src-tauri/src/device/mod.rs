@@ -95,3 +95,19 @@ pub async fn device_save_file<R: Runtime>(
 ) -> Result<bool, String> {
     platform::save_file(app, name, mime_type, base64).await
 }
+
+#[tauri::command]
+pub async fn device_schedule_todo<R: Runtime>(
+    app: AppHandle<R>,
+    id: String,
+    text: String,
+    remind_at: String,
+    repeat: String,
+) -> Result<(), String> {
+    platform::schedule_todo(app, id, text, remind_at, repeat).await
+}
+
+#[tauri::command]
+pub async fn device_cancel_todo<R: Runtime>(app: AppHandle<R>, id: String) -> Result<(), String> {
+    platform::cancel_todo(app, id).await
+}

@@ -94,3 +94,22 @@ pub async fn save_file<R: Runtime>(
     )
     .await
 }
+
+pub async fn schedule_todo<R: Runtime>(
+    app: AppHandle<R>,
+    id: String,
+    text: String,
+    remind_at: String,
+    repeat: String,
+) -> Result<(), String> {
+    call(
+        app,
+        "scheduleTodo",
+        serde_json::json!({ "id": id, "text": text, "remindAt": remind_at, "repeat": repeat }),
+    )
+    .await
+}
+
+pub async fn cancel_todo<R: Runtime>(app: AppHandle<R>, id: String) -> Result<(), String> {
+    call(app, "cancelTodo", serde_json::json!({ "id": id })).await
+}

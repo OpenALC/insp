@@ -1,0 +1,49 @@
+.notes-app > .todo-page { grid-column: 2 / 4; }
+.section-heading { display: flex; align-items: baseline; gap: 16px; }
+.todo-top-link, .mobile-todo-tab { padding: 5px 10px; border: 0; border-radius: 10px; background: transparent; color: var(--annotation-ink); font-size: 17px; }
+.mobile-todo-tab { display: none; }
+.todo-page { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; height: 100%; padding: 32px clamp(24px, 5vw, 70px) 24px; background: var(--app-bg); color: var(--ink); }
+.todo-header { display: flex; align-items: center; gap: 22px; min-height: 64px; }
+.todo-header h1 { margin: 0; font-size: 35px; font-weight: 750; }
+.todo-search { display: flex; align-items: center; gap: 13px; height: 52px; margin-top: 24px; padding: 0 18px; border-radius: 20px; background: var(--surface-soft); color: var(--annotation-ink); }
+.todo-search input { width: 100%; border: 0; outline: 0; background: transparent; font: inherit; }
+.todo-scroll { flex: 1; overflow: auto; padding: 22px 0 95px; }
+.todo-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60%; color: var(--annotation-ink); font-size: 17px; }
+.todo-empty-icon { display: grid; width: 66px; height: 66px; place-items: center; border-radius: 19px; background: var(--disabled-bg); }
+.todo-item { display: flex; align-items: flex-start; gap: 14px; padding: 16px 6px; border-bottom: 1px solid var(--line); }
+.todo-check { flex: 0 0 24px; width: 24px; height: 24px; margin-top: 2px; border: 2px solid var(--annotation-ink); border-radius: 7px; background: transparent; }
+.todo-check.checked { display: grid; place-items: center; border-color: var(--brand-strong); background: var(--brand-soft); color: var(--brand-strong); }
+.todo-item-body { display: flex; flex: 1; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; padding: 0; border: 0; background: none; color: var(--ink); text-align: left; font-size: 17px; }
+.todo-item-body span { overflow-wrap: anywhere; }
+.todo-item-body small { display: flex; align-items: center; gap: 5px; color: var(--annotation-ink); font-size: 12px; }
+.todo-item.done .todo-item-body { color: var(--annotation-ink); text-decoration: line-through; }
+.todo-completed-toggle { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 28px; padding: 12px 4px; border: 0; background: none; color: var(--annotation-ink); text-align: left; }
+.todo-completed-toggle svg { transition: transform .2s ease; }
+.todo-completed-toggle svg.open { transform: rotate(90deg); }
+.todo-add { position: absolute; right: clamp(25px, 5vw, 70px); bottom: 30px; display: grid; width: 60px; height: 60px; place-items: center; border: 0; border-radius: 50%; background: var(--brand); color: #141914; box-shadow: 0 8px 26px rgba(0,0,0,.15); }
+.todo-modal { position: fixed; z-index: 130; inset: 0; display: flex; align-items: flex-end; justify-content: center; background: var(--overlay); }
+.todo-compose, .todo-picker { width: min(610px, calc(100vw - 24px)); margin-bottom: max(12px, env(safe-area-inset-bottom)); padding: 24px; border-radius: 28px; background: var(--paper); box-shadow: 0 12px 42px rgba(0,0,0,.16); }
+.todo-compose-main { display: flex; gap: 15px; min-height: 120px; }
+.todo-compose-box { flex: 0 0 22px; width: 22px; height: 22px; margin-top: 4px; border: 2px solid var(--line); border-radius: 6px; }
+.todo-compose textarea { flex: 1; min-height: 110px; resize: vertical; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 17px; }
+.todo-compose-actions { display: flex; align-items: center; gap: 10px; }
+.todo-compose-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 15px; border: 0; border-radius: 22px; background: var(--surface-soft); }
+.todo-compose-actions .todo-submit { min-width: 94px; margin-left: auto; background: var(--brand); color: #141914; }
+.todo-compose-actions .todo-submit:disabled { background: var(--disabled-bg); color: var(--annotation-ink); }
+.todo-compose-actions .todo-remove { padding: 0 11px; color: var(--danger); }
+.todo-picker-modal { z-index: 131; }
+.todo-picker h2 { margin: 0 0 23px; text-align: center; font-size: 20px; }
+.todo-picker-summary, .todo-repeat { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 54px; }
+.todo-picker-summary input, .todo-repeat select { padding: 8px 10px; border: 0; border-radius: 15px; background: var(--surface-soft); color: var(--ink); font: inherit; }
+.todo-calendar-heading { display: flex; justify-content: space-between; align-items: center; margin-top: 15px; border-top: 1px solid var(--line); padding-top: 14px; }
+.todo-calendar-heading button { border: 0; background: none; color: var(--ink); }
+.todo-calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-top: 14px; text-align: center; }
+.todo-calendar > * { display: grid; min-height: 40px; place-items: center; }
+.todo-calendar .weekday { color: var(--annotation-ink); }
+.todo-calendar button { border: 0; border-radius: 12px; background: transparent; color: var(--ink); }
+.todo-calendar button.chosen { background: var(--brand); color: #141914; }
+.todo-picker-actions { display: flex; gap: 8px; margin-top: 19px; }
+.todo-picker-actions button { flex: 1; min-height: 42px; border: 0; border-radius: 14px; background: var(--surface-soft); }
+.todo-picker-actions .primary { display: flex; align-items: center; justify-content: center; gap: 5px; background: var(--brand); color: #141914; }
+.todo-error { position: absolute; right: 20px; bottom: 96px; padding: 12px 15px; border-radius: 12px; background: var(--danger-soft); color: var(--danger); }
+@media (max-width: 760px) { .notes-app > .todo-page { grid-column: auto; } .todo-page { position: absolute; inset: 0; padding: calc(var(--safe-top, 0px) + 52px) 23px 20px; z-index: 10; } .todo-header h1 { font-size: 32px; } .todo-add { right: 24px; bottom: calc(var(--safe-bottom, 0px) + 22px); } .todo-compose, .todo-picker { margin-bottom: max(10px, var(--safe-bottom, 0px)); } .mobile-todo-tab { display: block; } .section-heading { align-items: flex-start; } .section-heading .todo-top-link { margin-top: 2px; font-size: 24px; } }

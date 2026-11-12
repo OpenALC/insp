@@ -6,6 +6,7 @@ import type { NativeInvoke } from './native'
 import { EncryptedWorkspace } from '../security/workspace'
 import { encodeBase64 } from '../security/crypto'
 import type { ExportFile } from '../export/types'
+import type { TodoItem } from '../domain/models'
 
 const harmonyHost = 'inspNative' in window ? createHarmonyHost() : null
 
@@ -14,6 +15,37 @@ const nativeInvoke: NativeInvoke = harmonyHost
   : invoke
 export const vault = new EncryptedWorkspace(nativeInvoke, harmonyHost ? 'harmonyos' : import.meta.env.TAURI_ENV_PLATFORM === 'android' ? 'android' : 'windows')
 export const platform = vault.platform
+
+const desktopTodoTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+export async function cancelTodoReminder(id: string): Promise<void> {
+  const timer = desktopTodoTimers.get(id)
+  if (timer) clearTimeout(timer)
+  desktopTodoTimers.delete(id)
+  if (platform.capabilities.platform !== 'windows') await nativeInvoke<void>('device_cancel_todo', { id })
+}
+
+export async function scheduleTodoReminder(item: TodoItem): Promise<void> {
+  await cancelTodoReminder(item.id)
+  if (item.completed || !item.remindAt) return
+  if (platform.capabilities.platform !== 'windows') {
+    await nativeInvoke<void>('device_schedule_todo', { id: item.id, text: item.text, remindAt: item.remindAt, repeat: item.repeat })
+    return
+  }
+  let time = new Date(item.remindAt)
+  while (time.getTime() <= Date.now() && item.repeat !== 'none') {
+    if (item.repeat === 'daily') time.setDate(time.getDate() + 1)
+    if (item.repeat === 'weekly') time.setDate(time.getDate() + 7)
+    if (item.repeat === 'monthly') time.setMonth(time.getMonth() + 1)
+  }
+  const delay = time.getTime() - Date.now()
+  if (delay <= 0 || delay > 2_147_483_647) return
+  desktopTodoTimers.set(item.id, setTimeout(() => {
+    new Notification('拾页 · 待办', { body: item.text })
+    if (item.repeat !== 'none') void scheduleTodoReminder(item)
+  }, delay))
+  if (Notification.permission === 'default') await Notification.requestPermission()
+}
 
 export function registerCloseGuard(save: () => Promise<void>, onError: (error: unknown) => void) {
   return harmonyHost

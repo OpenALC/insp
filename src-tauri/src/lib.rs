@@ -188,6 +188,8 @@ pub fn run() {
             device::device_share_text,
             device::device_share_file,
             device::device_save_file,
+            device::device_schedule_todo,
+            device::device_cancel_todo,
             load_workspace,
             get_note,
             create_note,
