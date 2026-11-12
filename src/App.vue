@@ -32,6 +32,7 @@ import {
   Plus,
   LayoutGrid,
   List,
+  ListTodo,
   ListTree,
   Network,
   MoreHorizontal,
@@ -569,7 +570,7 @@ function documentText(node: JSONContent): string {
 
 function summaryFromNote(note: Note, plainText = note.preview): NoteSummary {
   const { content: _content, schemaVersion: _schemaVersion, ...summary } = note
-  return { ...summary, mindMapPreview: note.kind === 'mindmap' ? mindMapPreview(note.content as MindMapDocument) : undefined, richPreview: note.kind === 'richtext' ? richTextCardPreview(note.content as JSONContent) : undefined, preview: plainText.trim().replace(/\s+/g, ' ').slice(0, 180) }
+  return { ...summary, mindMapPreview: note.kind === 'mindmap' ? mindMapPreview(note.content as MindMapDocument) : undefined, richPreview: note.kind !== 'mindmap' ? richTextCardPreview(note.content as JSONContent) : undefined, preview: plainText.trim().replace(/\s+/g, ' ').slice(0, 180) }
 }
 
 function replaceSummary(summary: NoteSummary) {
@@ -999,7 +1000,7 @@ async function openNote(noteId: string, sourceCard: HTMLElement) {
       if (!summary || summary.privacy !== (filterKey.value === 'private' ? 'private' : 'normal')) return
       const note = await platform.repository.getNote(noteId)
       if (!workspaceAvailable.value || note.privacy !== summary.privacy) return
-      await (note.kind === 'richtext' ? import('./components/RichTextEditor.vue') : import('./components/MindMapEditor.vue'))
+      await (note.kind !== 'mindmap' ? import('./components/RichTextEditor.vue') : import('./components/MindMapEditor.vue'))
       resetDraftState(note)
       await nextTick()
       if (mobileLayout.value) await afterPaint()
@@ -1029,7 +1030,7 @@ async function createNote(kind: NoteKind = 'richtext') {
     if (snapshot.value) snapshot.value = { ...snapshot.value, notes: [summaryFromNote(note), ...snapshot.value.notes] }
     resetDraftState(note)
     mobileEditing.value = mobileLayout.value
-    newNoteFocus.value = mobileEditing.value && kind === 'richtext'
+    newNoteFocus.value = mobileEditing.value && kind !== 'mindmap'
     mobilePane.value = 'editor'
   })
 }
@@ -1108,7 +1109,7 @@ function updateDocument(content: NoteContent, plainText: string) {
   markDraftChanged()
 }
 
-const titlePlaceholder = computed(() => activeNote.value?.kind === 'mindmap' ? UNTITLED_MIND_MAP : '未命名笔记')
+const titlePlaceholder = computed(() => activeNote.value?.kind === 'mindmap' ? UNTITLED_MIND_MAP : activeNote.value?.kind === 'todo' ? '待办清单' : '未命名笔记')
 const editorTitle = computed({
   get: () => activeNote.value?.title === titlePlaceholder.value ? '' : activeNote.value?.title ?? '',
   set: (text: string) => {
@@ -1450,6 +1451,7 @@ onBeforeUnmount(() => {
         <div class="create-actions">
           <button class="create-note-button" type="button" aria-label="新建笔记" title="新建笔记" :disabled="isLoading || isTransitioning" @click="createNote('richtext')"><FilePlus2 :size="17" /><span>笔记</span></button>
           <button class="create-note-button create-map-button" type="button" aria-label="新建灵感笔记" title="新建灵感笔记" :disabled="isLoading || isTransitioning" @click="createNote('mindmap')"><Workflow :size="17" /><span>灵感笔记</span></button>
+          <button class="create-note-button create-todo-button" type="button" aria-label="新建待办清单" title="新建待办清单" :disabled="isLoading || isTransitioning" @click="createNote('todo')"><ListTodo :size="17" /><span>待办</span></button>
         </div>
       </header>
 
@@ -1467,13 +1469,13 @@ onBeforeUnmount(() => {
       <div v-else-if="filteredNotes.length" class="note-list">
         <button v-for="note in filteredNotes" :key="note.id" class="note-card" :data-note-id="note.id" :class="{ selected: !selectionMode && activeNote?.id === note.id, 'multi-selected': selectedNoteIds.has(note.id) }" :aria-pressed="selectionMode ? selectedNoteIds.has(note.id) : undefined" :disabled="isTransitioning" @pointerdown="notePointerDown($event, note.id)" @pointermove="notePointerMove" @pointerup="notePointerEnd" @pointercancel="notePointerEnd" @contextmenu="noteContextMenu($event, note.id)" @click="noteCardClick($event, note.id)">
           <span v-if="selectionMode" class="note-selection-mark"><Check v-if="selectedNoteIds.has(note.id)" :size="16" /></span>
-          <span class="note-card-icon"><Workflow v-if="note.kind === 'mindmap'" :size="17" /><FileText v-else :size="17" /></span>
+          <span class="note-card-icon"><Workflow v-if="note.kind === 'mindmap'" :size="17" /><ListTodo v-else-if="note.kind === 'todo'" :size="17" /><FileText v-else :size="17" /></span>
           <span class="note-card-content">
-            <span class="note-card-topline"><strong>{{ note.title || (note.kind === 'mindmap' ? UNTITLED_MIND_MAP : '未命名笔记') }}</strong></span>
+            <span class="note-card-topline"><strong>{{ note.title || (note.kind === 'mindmap' ? UNTITLED_MIND_MAP : note.kind === 'todo' ? '待办清单' : '未命名笔记') }}</strong></span>
             <MindMapCardPreview v-if="note.kind === 'mindmap' && note.mindMapPreview" :preview="note.mindMapPreview" />
-            <RichTextCardPreview v-else-if="note.kind === 'richtext' && note.richPreview" :key="note.revision" :content="note.richPreview" :fallback="note.preview || '还没有正文，点开继续记录。'" />
+            <RichTextCardPreview v-else-if="note.kind !== 'mindmap' && note.richPreview" :key="note.revision" :content="note.richPreview" :fallback="note.preview || '还没有正文，点开继续记录。'" />
             <span v-else class="note-preview">{{ note.preview || '还没有正文，点开继续记录。' }}</span>
-            <span class="note-card-foot"><time>{{ formatDate(note.updatedAt) }}</time><span v-if="note.groupId" class="note-group-tag">{{ groups.find((item) => item.id === note.groupId)?.name ?? '分组' }}</span><Workflow v-if="note.kind === 'mindmap'" :size="15" aria-label="灵感笔记" /></span>
+            <span class="note-card-foot"><time>{{ formatDate(note.updatedAt) }}</time><span v-if="note.groupId" class="note-group-tag">{{ groups.find((item) => item.id === note.groupId)?.name ?? '分组' }}</span><Workflow v-if="note.kind === 'mindmap'" :size="15" aria-label="灵感笔记" /><ListTodo v-else-if="note.kind === 'todo'" :size="15" aria-label="待办清单" /></span>
           </span>
           <ChevronRight class="note-card-chevron" :size="15" />
         </button>
@@ -1493,7 +1495,7 @@ onBeforeUnmount(() => {
       </div>
 
     </section>
-    <div class="floating-compose" :class="{ compact: listScrolling }" aria-label="创建笔记"><button class="compose-main" aria-label="新建普通笔记" :disabled="isTransitioning" @click="createNote('richtext')"><Plus :size="27" /><span>笔记</span></button><span class="compose-separator"></span><button aria-label="新建灵感笔记" :disabled="isTransitioning" @click="createNote('mindmap')"><Workflow :size="24" /><span>灵感笔记</span></button></div>
+    <div class="floating-compose" :class="{ compact: listScrolling }" aria-label="创建笔记"><button class="compose-main" aria-label="新建普通笔记" :disabled="isTransitioning" @click="createNote('richtext')"><Plus :size="27" /><span>笔记</span></button><span class="compose-separator"></span><button class="compose-map" aria-label="新建灵感笔记" :disabled="isTransitioning" @click="createNote('mindmap')"><Workflow :size="24" /><span>灵感笔记</span></button><span class="compose-separator"></span><button aria-label="新建待办清单" :disabled="isTransitioning" @click="createNote('todo')"><ListTodo :size="23" /><span>待办</span></button></div>
     <div v-if="selectionMode" class="batch-actions" role="toolbar" aria-label="多选笔记操作"><button :disabled="!selectedNoteIds.size || isTransitioning" @click="batchGroupOpen = true"><Folder :size="21" />移动到</button><button class="danger" :disabled="!selectedNoteIds.size || isTransitioning" @click="deleteSelectedNotes"><Trash2 :size="21" />删除</button></div>
 
     <main class="editor-pane">
@@ -1507,20 +1509,20 @@ onBeforeUnmount(() => {
           <button class="icon-button mobile-back" type="button" :aria-label="mobileEditing ? '结束编辑' : '返回笔记列表'" :disabled="isTransitioning" @click="mobileEditing ? finishMobileEditing() : showNoteList()"><ArrowLeft :size="20" /></button>
           <input v-if="mobileLayout" v-model="editorTitle" class="topbar-note-title" :placeholder="titlePlaceholder" aria-label="笔记标题" :disabled="isTransitioning" @focus="mobileEditing = true" />
           <div v-else class="breadcrumb"><span>拾页</span><ChevronRight :size="14" /><span>{{ activeGroupName }}</span><ChevronRight :size="14" /><span class="breadcrumb-current">笔记</span></div>
-          <div v-if="mobileEditing && activeNote.kind === 'richtext'" class="mobile-history"><button class="icon-button" aria-label="撤销编辑" :disabled="!richEditor?.canUndo" @pointerdown.prevent @click="richEditor?.undo()"><Undo2 :size="22" /></button><button class="icon-button" aria-label="重做编辑" :disabled="!richEditor?.canRedo" @pointerdown.prevent @click="richEditor?.redo()"><Redo2 :size="22" /></button></div>
+          <div v-if="mobileEditing && activeNote.kind !== 'mindmap'" class="mobile-history"><button class="icon-button" aria-label="撤销编辑" :disabled="!richEditor?.canUndo" @pointerdown.prevent @click="richEditor?.undo()"><Undo2 :size="22" /></button><button class="icon-button" aria-label="重做编辑" :disabled="!richEditor?.canRedo" @pointerdown.prevent @click="richEditor?.redo()"><Redo2 :size="22" /></button></div>
           <button v-if="mobileEditing" class="mobile-done icon-button" type="button" aria-label="完成编辑" title="完成编辑" @pointerdown.prevent @click="finishMobileEditing"><Check :size="23" /></button>
           <button v-if="activeNote.kind === 'mindmap'" class="icon-button mind-view-toggle" type="button" :disabled="!mindEditor" :aria-label="nextMindView === 'tree' ? '切换到思维树' : '切换到列表'" :title="nextMindView === 'tree' ? '切换到思维树' : '切换到列表'" @pointerdown.prevent @click="mindEditor?.switchView(nextMindView)"><Network v-if="nextMindView === 'tree'" :size="21" /><ListTree v-else :size="21" /></button>
           <button class="mobile-note-settings icon-button" type="button" aria-label="笔记设置" :aria-expanded="noteSettingsOpen" @pointerdown.prevent @click="openNoteOptions"><Settings2 :size="20" /></button>
         </header>
 
-        <div v-if="activeNote.kind === 'richtext'" class="document-heading">
+        <div v-if="activeNote.kind !== 'mindmap'" class="document-heading">
           <div class="document-kicker">{{ formatDate(activeNote.updatedAt) }}<span>｜</span>{{ draftPlainText.length }} 字</div>
           <input v-if="!mobileLayout" v-model="editorTitle" class="document-title" :placeholder="titlePlaceholder" aria-label="笔记标题" :disabled="isTransitioning" @focus="mobileEditing = true" />
         </div>
 
         <button v-if="canCreateMindNote" type="button" class="blank-mind-note" :disabled="isTransitioning" @pointerdown.prevent @click="createMindNoteFromBlank"><Workflow :size="17" />创建灵感笔记<span>用层级整理想法</span></button>
         <RichTextEditor
-          v-if="activeNote.kind === 'richtext'"
+          v-if="activeNote.kind !== 'mindmap'"
           :key="activeNote.id"
           ref="richEditor"
           :autofocus="newNoteFocus"

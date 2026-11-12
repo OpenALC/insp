@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import appInfo from '../../package.json'
+import { accentColor, setAccentColor } from '../appearance'
+import { openSourceComponents } from '../open-source'
 import type { VaultController } from '../security/types'
 import ThemeSelect from './ThemeSelect.vue'
 import SettingsChoice from './SettingsChoice.vue'
@@ -61,7 +63,7 @@ async function copy() {
     <div :key="view" class="settings-scroll settings-content-in">
       <template v-if="view === 'main'">
         <h2>外观</h2>
-        <div class="settings-section"><ThemeSelect /><SettingsChoice label="笔记布局" :value="layout" :options="[{ value: 'grid', label: '宫格' }, { value: 'list', label: '列表' }]" @change="emit('layout', $event)" /></div>
+        <div class="settings-section"><ThemeSelect /><label class="settings-row accent-row"><span>主题色</span><input type="color" :value="accentColor" aria-label="选择主题色" @input="setAccentColor(($event.target as HTMLInputElement).value)" /><input class="accent-hex" type="text" :value="accentColor.toUpperCase()" aria-label="主题色十六进制值" maxlength="7" @change="setAccentColor(($event.target as HTMLInputElement).value)" /></label><SettingsChoice label="笔记布局" :value="layout" :options="[{ value: 'grid', label: '宫格' }, { value: 'list', label: '列表' }]" @change="emit('layout', $event)" /></div>
         <h2>安全与隐私</h2>
         <div class="settings-section">
           <div class="settings-row"><ShieldCheck :size="20" /><span>普通笔记</span><span class="settings-value">直接打开 · 本地加密</span></div>
@@ -90,7 +92,8 @@ async function copy() {
           <a class="settings-row" href="https://github.com/OpenALC/insp/blob/main/LICENSE" target="_blank" rel="noopener noreferrer"><ShieldCheck :size="20" /><span>开源协议</span><span class="settings-value">MIT</span><ChevronRight :size="17" /></a>
         </div>
         <p v-if="updateStatus" class="settings-page-description" role="status">{{ updateStatus }}</p>
-        <p class="settings-page-description">拾页基于 Vue、Tiptap、Tauri 等开源项目构建，完整源码、许可证及更新记录请见 GitHub 仓库。</p>
+        <h2>开源组件声明</h2>
+        <div class="settings-section"><a v-for="component in openSourceComponents" :key="component.url" class="settings-row license-row" :href="component.url" target="_blank" rel="noopener noreferrer"><span>{{ component.name }}</span><span class="settings-value">{{ component.license }}</span><ChevronRight :size="17" /><small>{{ component.url }}</small></a></div>
       </template>
       <template v-else-if="view === 'import'">
         <p class="settings-page-description">选择 Markdown、纯文本、小米笔记“导出为副本”的 ZIP，或图片。笔记和图片会加入本机加密空间。</p>

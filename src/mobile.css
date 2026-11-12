@@ -149,7 +149,8 @@ button.settings-row { cursor: pointer; }
   .rich-card-preview :is(p, h1, h2, h3, ul, ol, blockquote, pre) { margin: 0 0 6px; }
   .rich-card-preview :is(h1, h2, h3) { font-size: 1em; font-weight: 600; }
   .rich-card-preview :is(ul, ol) { padding-left: 21px; }
-  .rich-card-preview blockquote { padding: 4px 0 4px 10px; color: var(--annotation-ink); border-left: 2px solid var(--brand); font-size: .88em; font-style: italic; }
+  .rich-card-preview blockquote { position: relative; padding: 4px 0 4px 23px; color: var(--annotation-ink); border: 0; font-size: .88em; font-style: italic; }
+  .rich-card-preview blockquote::before { position: absolute; left: 2px; color: var(--annotation-ink); content: '❝'; font-size: 18px; }
   .rich-card-preview mark { color: inherit; background: var(--highlight-bg); }
   .rich-card-preview .card-link { text-decoration: underline; text-decoration-color: var(--brand-strong); }
   .rich-card-preview img, .card-image-placeholder { display: block; width: 100%; height: 120px; border-radius: 10px; object-fit: cover; }
@@ -157,7 +158,9 @@ button.settings-row { cursor: pointer; }
   .card-task-list { padding-left: 0 !important; list-style: none; }
   .card-task-item { display: flex; align-items: baseline; gap: 7px; }
   .card-task-item p { margin: 0; }
-  .card-task-box { display: inline-block; width: 12px; height: 12px; flex: 0 0 12px; border: 1px solid var(--ink); border-radius: 3px; }
+  .card-task-box { display: inline-grid; width: 14px; height: 14px; flex: 0 0 14px; place-items: center; border: 1px solid var(--brand-strong); border-radius: 4px; color: var(--ink); font-size: 11px; line-height: 1; }
+  .card-task-item[data-checked='true'] .card-task-box { background: var(--brand-soft); }
+  .card-task-item[data-checked='true'] p { color: var(--annotation-ink); text-decoration: line-through; }
   .rich-card-preview hr { margin: 8px 0; border: 0; border-top: 1px solid var(--line); }
   .note-card-icon, .note-card-chevron { display: none; }
   .note-card-foot { width: 100%; margin-top: auto; padding-top: 8px; font-size: 11px; }
@@ -168,7 +171,7 @@ button.settings-row { cursor: pointer; }
   .floating-compose button { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; padding: 0 19px; border: 0; border-radius: 26px; color: var(--ink); background: transparent; font-size: 14px; white-space: nowrap; transition: padding .42s cubic-bezier(.18, 1.45, .32, 1), gap .42s cubic-bezier(.18, 1.45, .32, 1); }
   .floating-compose .compose-main { background: var(--brand-soft); }
   .floating-compose button span { display: block; width: 28px; overflow: hidden; opacity: 1; transition: width .42s cubic-bezier(.18, 1.45, .32, 1), opacity .16s ease; }
-  .floating-compose button:last-child span { width: 56px; }
+  .floating-compose .compose-map span { width: 56px; }
   .floating-compose.compact button { gap: 0; padding: 0 12px; }
   .floating-compose.compact button span, .floating-compose.compact button:last-child span { width: 0; opacity: 0; }
   .compose-separator { width: 1px; height: 22px; margin: 0 6px; background: var(--line); }

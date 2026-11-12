@@ -356,6 +356,11 @@ impl Storage {
                 serde_json::json!({"type":"doc","content":[{"type":"paragraph"}]}),
                 "",
             ),
+            "todo" => (
+                "待办清单",
+                serde_json::json!({"type":"doc","content":[{"type":"taskList","content":[{"type":"taskItem","attrs":{"checked":false},"content":[{"type":"paragraph"}]}]}]}),
+                "",
+            ),
             "mindmap" => (
                 "未命名的灵感笔记",
                 serde_json::json!({"type":"mindmap","root":{"id":Uuid::new_v4().to_string(),"text":"未命名的灵感笔记","children":[]}}),

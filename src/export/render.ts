@@ -157,8 +157,8 @@ function paintText(ctx: CanvasRenderingContext2D, row: TextRow, y: number, layou
     ctx.fillRect(row.x - 6, y, layout.width - layout.padding - row.x + 6, row.height)
   }
   if (row.quoteDepth) {
-    ctx.fillStyle = '#b9c6d2'
-    ctx.fillRect(layout.padding - 12, y, 3, row.height)
+    ctx.fillStyle = '#777e77'
+    ctx.fillText('❝', layout.padding - 16, baseline)
   }
   if (row.treeStart) {
     ctx.strokeStyle = '#b9c6d2'

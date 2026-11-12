@@ -28,7 +28,7 @@ function renderNode(node: JSONContent, images: Record<string, string>): VNodeChi
     case 'orderedList': return h('ol', children)
     case 'taskList': return h('ul', { class: 'card-task-list' }, children)
     case 'listItem': return h('li', children)
-    case 'taskItem': return h('li', { class: 'card-task-item' }, [h('span', { class: 'card-task-box' }), ...children])
+    case 'taskItem': return h('li', { class: 'card-task-item', 'data-checked': node.attrs?.checked ? 'true' : 'false' }, [h('span', { class: 'card-task-box' }, node.attrs?.checked ? '✓' : ''), ...children])
     case 'blockquote': return h('blockquote', children)
     case 'codeBlock': return h('pre', children)
     default: return h('div', children)

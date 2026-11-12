@@ -27,9 +27,8 @@ function textRun(run: Run, code = false): string {
 function paragraphProperties(block: Paragraph): string {
   const heading = block.heading ? `<w:pStyle w:val="Heading${block.heading}"/><w:keepNext/>` : ''
   const indent = (block.indent + block.quoteDepth) * 360 + (block.marker ? 300 : 0)
-  const quote = block.quoteDepth ? '<w:pBdr><w:left w:val="single" w:sz="14" w:space="8" w:color="B9C6D2"/></w:pBdr>' : ''
   const code = block.code ? '<w:shd w:fill="F1F3F5"/>' : ''
-  return `<w:pPr>${heading}${quote}${code}<w:spacing w:after="140" w:line="300" w:lineRule="auto"/><w:ind w:left="${indent}"${block.marker ? ' w:hanging="300"' : ''}/></w:pPr>`
+  return `<w:pPr>${heading}${code}<w:spacing w:after="140" w:line="300" w:lineRule="auto"/><w:ind w:left="${indent}"${block.marker ? ' w:hanging="300"' : ''}/></w:pPr>`
 }
 
 function drawing(id: number, relationship: string, width: number, height: number, alt: string): string {
@@ -57,6 +56,7 @@ export async function toDocx(note: Note, resolveAttachment: AttachmentResolver, 
   for (const block of doc.blocks) {
     if (block.kind === 'paragraph') {
       const runs: string[] = block.marker ? [textRun({ text: `${block.marker} ` })] : []
+      if (block.quoteDepth) runs.unshift('<w:r><w:rPr><w:color w:val="777E77"/></w:rPr><w:t>❝ </w:t></w:r>')
       for (const run of block.runs) {
         let value = textRun(run, block.code)
         if (run.href && /^(https?:|mailto:|tel:)/i.test(run.href)) {
@@ -86,6 +86,7 @@ export async function toDocx(note: Note, resolveAttachment: AttachmentResolver, 
       const width = Math.round(image.width * scale)
       const height = Math.round(image.height * scale)
       body.push(`<w:p><w:pPr><w:spacing w:after="160"/><w:ind w:left="${indent}"/></w:pPr>`
+        + (block.quoteDepth ? '<w:r><w:rPr><w:color w:val="777E77"/></w:rPr><w:t>❝ </w:t></w:r>' : '')
         + (block.marker ? textRun({ text: `${block.marker} ` }) : '')
         + drawing(++imageIndex, image.relationship, width, height, block.alt) + '</w:p>')
     }

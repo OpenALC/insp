@@ -277,10 +277,12 @@ button:disabled { cursor: not-allowed; }
 .rich-editor-content li[data-type='taskItem'] > label { display: inline-flex; flex: 0 0 auto; align-items: center; padding-top: 5px; }
 .rich-editor-content li[data-type='taskItem'] > label input { width: 14px; height: 14px; accent-color: var(--brand-strong); cursor: pointer; }
 .rich-editor-content li[data-type='taskItem'] > div { min-width: 0; flex: 1; }
-.rich-editor-content li[data-type='taskItem'][data-checked='true'] > div { color: var(--ink); text-decoration: line-through; }
-.rich-editor-content blockquote { position: relative; margin: 18px 0; padding: 14px 18px 12px 28px; color: var(--annotation-ink); border-left: 3px solid var(--brand); border-radius: 0 12px 12px 0; background: var(--surface-soft); font-size: .88em; font-style: italic; line-height: 1.7; }
-.rich-editor-content blockquote::before { position: absolute; top: 8px; left: 9px; color: var(--brand-strong); content: '“'; font-size: 24px; font-style: normal; line-height: 1; }
+.rich-editor-content li[data-type='taskItem'][data-checked='true'] > div { color: var(--annotation-ink); text-decoration: line-through; }
+.rich-editor-content blockquote { position: relative; margin: 18px 0; padding: 14px 18px 12px 28px; color: var(--annotation-ink); border: 0; border-radius: 12px; background: var(--surface-soft); font-size: .88em; font-style: italic; line-height: 1.7; }
+.rich-editor-content blockquote::before { position: absolute; top: 8px; left: 9px; color: var(--annotation-ink); content: '❝'; font-size: 24px; font-style: normal; line-height: 1; }
 .rich-editor-content blockquote p:last-child { margin-bottom: 0; }
+.rich-card-preview blockquote { position: relative; padding-left: 23px; color: var(--annotation-ink); border: 0; font-size: .88em; font-style: italic; }
+.rich-card-preview blockquote::before { position: absolute; left: 2px; color: var(--annotation-ink); content: '❝'; font-size: 18px; }
 .rich-editor-content [data-indent='1'] { margin-left: 1.75em; }
 .rich-editor-content [data-indent='2'] { margin-left: 3.5em; }
 .rich-editor-content [data-indent='3'] { margin-left: 5.25em; }

@@ -3,7 +3,7 @@ import type { MindMapDocument, MindMapPreview } from './mindmap'
 
 export type NoteContent = JSONContent | MindMapDocument
 
-export type NoteKind = 'richtext' | 'mindmap'
+export type NoteKind = 'richtext' | 'mindmap' | 'todo'
 export type PrivacyMode = 'normal' | 'private'
 export type SyncPolicy = 'localOnly' | 'sync'
 

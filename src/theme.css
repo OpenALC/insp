@@ -70,6 +70,10 @@ button, input, select, textarea, option { color: var(--ink); }
 input, textarea { caret-color: var(--ink); }
 input::placeholder, textarea::placeholder { color: var(--ink); opacity: 1; }
 option { background: var(--input-bg); }
+.accent-row input[type='color'] { width: 42px; height: 34px; margin-left: auto; padding: 2px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); cursor: pointer; }
+.accent-row .accent-hex { width: 88px; min-height: 34px; padding: 4px 7px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); font-size: 12px; font-variant-numeric: tabular-nums; text-transform: uppercase; }
+.license-row { flex-wrap: wrap; text-decoration: none; }
+.license-row small { width: 100%; overflow: hidden; color: var(--annotation-ink); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 input:-webkit-autofill {
   -webkit-text-fill-color: var(--ink);
   box-shadow: 0 0 0 1000px var(--input-bg) inset;

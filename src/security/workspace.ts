@@ -140,7 +140,7 @@ export class EncryptedWorkspace implements VaultController {
             groups: copy(this.groups()),
             notes: this.notes().filter(n => !n.deletedAt && (n.privacy !== 'private' || this.state.privateVisible)).map(n => {
               const { content: _content, schemaVersion: _schema, deletedAt: _deleted, ...summary } = n
-              return copy({ ...summary, mindMapPreview: n.kind === 'mindmap' ? mindMapPreview(n.content as MindMapDocument) : undefined, richPreview: n.kind === 'richtext' ? richTextCardPreview(n.content as JSONContent) : undefined })
+              return copy({ ...summary, mindMapPreview: n.kind === 'mindmap' ? mindMapPreview(n.content as MindMapDocument) : undefined, richPreview: n.kind !== 'mindmap' ? richTextCardPreview(n.content as JSONContent) : undefined })
             }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
             dataDirectory: this.meta.dataDirectory,
           }
@@ -148,8 +148,11 @@ export class EncryptedWorkspace implements VaultController {
         getNote: async id => { await this.queue; return copy(this.note(id)) },
         createNote: (groupId, kind = 'richtext') => this.write(async () => {
           const now = timestamp()
-          const title = kind === 'mindmap' ? UNTITLED_MIND_MAP : '未命名笔记'
-          const note: StoredNote = { id: crypto.randomUUID(), title, groupId, kind, privacy: 'normal', syncPolicy: 'sync', preview: kind === 'mindmap' ? title : '', createdAt: now, updatedAt: now, revision: 1, schemaVersion: 1, content: kind === 'mindmap' ? createMindMapDocument(title) : { type: 'doc', content: [{ type: 'paragraph' }] }, deletedAt: null }
+          const title = kind === 'mindmap' ? UNTITLED_MIND_MAP : kind === 'todo' ? '待办清单' : '未命名笔记'
+          const content = kind === 'mindmap' ? createMindMapDocument(title) : kind === 'todo'
+            ? { type: 'doc', content: [{ type: 'taskList', content: [{ type: 'taskItem', attrs: { checked: false }, content: [{ type: 'paragraph' }] }] }] }
+            : { type: 'doc', content: [{ type: 'paragraph' }] }
+          const note: StoredNote = { id: crypto.randomUUID(), title, groupId, kind, privacy: 'normal', syncPolicy: 'sync', preview: kind === 'mindmap' ? title : '', createdAt: now, updatedAt: now, revision: 1, schemaVersion: 1, content, deletedAt: null }
           await this.persist([{ type: 'note', value: note }])
           return copy(note)
         }),

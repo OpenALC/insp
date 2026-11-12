@@ -8,7 +8,7 @@ const LEGACY_PURGE_MARKER_ID: string = '__insp_legacy_purge_pending__';
 const INTERNAL_RECORD_PREFIX: string = '__insp_';
 const MANAGED_ATTACHMENT_NAME: RegExp = /^[0-9a-f-]{36}\.(png|jpg|gif|webp)$/;
 
-export type NoteKind = 'richtext' | 'mindmap';
+export type NoteKind = 'richtext' | 'mindmap' | 'todo';
 
 interface MindMapBranch {
   id: string;
@@ -25,9 +25,24 @@ interface RichTextParagraph {
   type: 'paragraph';
 }
 
+interface RichTextTaskAttrs {
+  checked: boolean;
+}
+
+interface RichTextTaskItem {
+  type: 'taskItem';
+  attrs: RichTextTaskAttrs;
+  content: RichTextParagraph[];
+}
+
+interface RichTextTaskList {
+  type: 'taskList';
+  content: RichTextTaskItem[];
+}
+
 interface RichTextContent {
   type: 'doc';
-  content: RichTextParagraph[];
+  content: (RichTextParagraph | RichTextTaskList)[];
 }
 
 interface ContentTypeMarker {
@@ -291,7 +306,7 @@ export class NotesRepository {
     await this.ensureLegacyWritable();
     const id = util.generateRandomUUID();
     const timestamp = new Date().toISOString();
-    const title = kind === 'mindmap' ? '未命名的灵感笔记' : '未命名笔记';
+    const title = kind === 'mindmap' ? '未命名的灵感笔记' : kind === 'todo' ? '待办清单' : '未命名笔记';
     let contentJson: string;
     if (kind === 'mindmap') {
       const children: MindMapBranch[] = [];
@@ -300,7 +315,12 @@ export class NotesRepository {
       contentJson = JSON.stringify(content);
     } else {
       const paragraph: RichTextParagraph = { type: 'paragraph' };
-      const content: RichTextContent = { type: 'doc', content: [paragraph] };
+      const taskAttrs: RichTextTaskAttrs = { checked: false };
+      const taskItem: RichTextTaskItem = { type: 'taskItem', attrs: taskAttrs, content: [paragraph] };
+      const taskList: RichTextTaskList = { type: 'taskList', content: [taskItem] };
+      const content: RichTextContent = kind === 'todo'
+        ? { type: 'doc', content: [taskList] }
+        : { type: 'doc', content: [paragraph] };
       contentJson = JSON.stringify(content);
     }
     await this.store.executeSql(
@@ -315,7 +335,8 @@ export class NotesRepository {
     let title = input.title.trim() || '未命名笔记';
     const preview = input.plainText.replace(/\s+/g, ' ').slice(0, 180);
     const contentType = (input.content as ContentTypeMarker).type;
-    const kind: NoteKind = contentType === 'mindmap' ? 'mindmap' : 'richtext';
+    const previous = await this.getNote(input.id);
+    const kind: NoteKind = contentType === 'mindmap' ? 'mindmap' : previous.kind === 'todo' ? 'todo' : 'richtext';
     if (kind === 'mindmap') {
       const map = input.content as MindMapContent;
       title = map.root.text.trim() ? map.root.text : '未命名的灵感笔记';
