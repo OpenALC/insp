@@ -2,6 +2,14 @@ use std::{path::PathBuf, ptr, sync::Arc, sync::Mutex};
 
 use rusqlite::{params, Connection, OptionalExtension};
 use tauri::{plugin::PluginApi, AppHandle, Manager, Runtime};
+use windows::{
+    core::{factory, HSTRING},
+    Security::Credentials::UI::{
+        UserConsentVerificationResult, UserConsentVerifier, UserConsentVerifierAvailability,
+    },
+    Win32::System::WinRT::IUserConsentVerifierInterop,
+};
+use windows_future::IAsyncOperation;
 use windows_sys::Win32::{
     Foundation::LocalFree,
     Security::Cryptography::{
@@ -148,11 +156,32 @@ pub async fn secret_set<R: Runtime>(
 }
 
 pub async fn auth_status<R: Runtime>(_app: AppHandle<R>) -> Result<bool, String> {
-    Ok(false)
+    let availability = UserConsentVerifier::CheckAvailabilityAsync()
+        .map_err(|error| error.to_string())?
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(availability == UserConsentVerifierAvailability::Available)
 }
 
-pub async fn authenticate<R: Runtime>(_app: AppHandle<R>) -> Result<bool, String> {
-    Ok(false)
+pub async fn authenticate<R: Runtime>(app: AppHandle<R>) -> Result<bool, String> {
+    let hwnd = app
+        .get_webview_window("main")
+        .ok_or("找不到主窗口。")?
+        .hwnd()
+        .map_err(|error| error.to_string())?;
+    let request: IAsyncOperation<UserConsentVerificationResult> = {
+        let verifier = factory::<UserConsentVerifier, IUserConsentVerifierInterop>()
+            .map_err(|error| error.to_string())?;
+        unsafe {
+            verifier
+                .RequestVerificationForWindowAsync(hwnd, &HSTRING::from("验证身份以查看隐私笔记"))
+        }
+        .map_err(|error| error.to_string())?
+    };
+    Ok(
+        request.await.map_err(|error| error.to_string())?
+            == UserConsentVerificationResult::Verified,
+    )
 }
 
 pub async fn insets<R: Runtime>(_app: AppHandle<R>) -> Result<Insets, String> {

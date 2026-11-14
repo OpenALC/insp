@@ -17,7 +17,7 @@
 .mindmap-editor .mindmap-outline-group { margin: 0; padding: 0; list-style: none; }
 .mindmap-editor .mindmap-outline-item { min-width: 0; }
 .mindmap-editor .mindmap-outline-row { display: flex; position: relative; min-width: 160px; align-items: flex-start; gap: 2px; margin: 2px 0; padding: 2px 0; border-radius: 6px; }
-.mindmap-editor .mindmap-outline-row.is-selected { background: var(--brand-tint); }
+.mindmap-editor .mindmap-outline-row.is-selected { background: transparent; }
 .mindmap-editor .mindmap-outline-row-root { margin: 0 0 14px; padding: 8px 0 14px; border-bottom: 1px solid var(--line); border-radius: 0; }
 .mindmap-editor .mindmap-outline-row-root.is-selected { background: transparent; }
 .mindmap-editor .mindmap-outline-group { margin-left: 19px; padding: 2px 0 3px 13px; border-left: 1px solid var(--brand-border); }
@@ -56,7 +56,7 @@
 .mindmap-editor .mindmap-tree-links path { fill: none; stroke: var(--brand-line); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .mindmap-editor .mindmap-tree-node { position: absolute; z-index: 1; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
 .mindmap-editor .mindmap-tree-node-root { border-color: var(--brand-border); background: var(--brand-tint); }
-.mindmap-editor .mindmap-tree-node.is-selected { z-index: 2; border-color: var(--brand-line); box-shadow: 0 0 0 2px var(--brand-soft); }
+.mindmap-editor .mindmap-tree-node.is-selected { z-index: 2; }
 .mindmap-editor .mindmap-tree-text { display: block; width: 100%; height: 100%; min-height: 0; margin: 0; padding: 0; overflow: auto; resize: none; color: var(--ink); border: 0; border-radius: 2px; outline: none; background: transparent; font: inherit; font-size: 16px; line-height: 1.45; overflow-wrap: anywhere; scrollbar-width: thin; }
 .mindmap-editor .mindmap-tree-node-root .mindmap-tree-text { font-weight: 650; }
 .mindmap-editor .mindmap-tree-text:focus-visible { box-shadow: inset 0 -2px var(--brand-line); }

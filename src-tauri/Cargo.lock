@@ -1805,6 +1805,8 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tempfile",
  "uuid",
+ "windows",
+ "windows-future",
  "windows-sys 0.61.2",
 ]
 

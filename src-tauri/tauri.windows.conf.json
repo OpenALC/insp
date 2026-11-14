@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [{
+      "label": "main",
+      "title": "拾页 · Insp",
+      "width": 1280,
+      "height": 840,
+      "minWidth": 1040,
+      "minHeight": 680,
+      "decorations": false,
+      "shadow": true,
+      "dragDropEnabled": false,
+      "backgroundColor": "#f7f6f2"
+    }]
+  }
+}

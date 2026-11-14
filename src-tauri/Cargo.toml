@@ -31,6 +31,8 @@ tauri-plugin-single-instance = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
+windows = { version = "0.62.2", features = ["Security_Credentials_UI", "Win32_Foundation", "Win32_Graphics_Dwm", "Win32_System_WinRT"] }
+windows-future = "0.3.2"
 
 [profile.dev]
 strip = "debuginfo"

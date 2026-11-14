@@ -12,6 +12,7 @@ import SettingsPage from './components/SettingsPage.vue'
 import MindMapCardPreview from './components/MindMapCardPreview.vue'
 import RichTextCardPreview from './components/RichTextCardPreview.vue'
 import TodoPage from './components/TodoPage.vue'
+import DesktopTitlebar from './components/DesktopTitlebar.vue'
 import { isEmptyRichText, richTextCardPreview } from './domain/note-content'
 const RichTextEditor = defineAsyncComponent(() => import('./components/RichTextEditor.vue'))
 const MindMapEditor = defineAsyncComponent(() => import('./components/MindMapEditor.vue'))
@@ -69,6 +70,7 @@ function withMindNoteTitle(note: Note): Note {
 
 const snapshot = ref<WorkspaceSnapshot | null>(null)
 const activeNote = ref<Note | null>(null)
+const desktopMode = platform.capabilities.platform === 'windows'
 const isLoading = ref(true)
 const isTransitioning = ref(false)
 const filterKey = ref('all')
@@ -299,6 +301,9 @@ function noteContextMenu(event: MouseEvent, id: string) {
   if (!mobileLayout.value) return
   event.preventDefault()
   startNoteSelection(id)
+}
+function pageContextMenu(event: MouseEvent) {
+  if (desktopMode) event.preventDefault()
 }
 function onButtonPointerDown(event: PointerEvent) {
   if (!mobileLayout.value || event.button !== 0) return
@@ -1373,6 +1378,7 @@ onMounted(async () => {
   window.addEventListener('insp:back', navigateBack)
   window.addEventListener('online', handleOnline)
   document.addEventListener('visibilitychange', handleVisibility)
+  document.addEventListener('contextmenu', pageContextMenu)
   window.addEventListener('insp:insets', applyInsets)
   window.addEventListener('insp:theme', updateNativeTheme)
   updateNativeTheme()
@@ -1408,6 +1414,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('insp:back', navigateBack)
   window.removeEventListener('online', handleOnline)
   document.removeEventListener('visibilitychange', handleVisibility)
+  document.removeEventListener('contextmenu', pageContextMenu)
   window.removeEventListener('insp:insets', applyInsets)
   window.removeEventListener('insp:theme', updateNativeTheme)
   if (remoteRefreshTimer) clearInterval(remoteRefreshTimer)
@@ -1418,6 +1425,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <DesktopTitlebar v-if="desktopMode && !workspaceAvailable" class="desktop-gate-titlebar" />
   <VaultPanel
     v-if="!workspaceAvailable"
     :vault="vault"
@@ -1425,7 +1433,8 @@ onBeforeUnmount(() => {
     :error="vaultInitError"
     @retry="retryInitialize"
   />
-  <div v-else class="notes-app" :class="{ 'mobile-editor-open': mobilePane === 'editor', 'sidebar-open': sidebarOpen, 'mobile-writing': mobileEditing, 'note-settings-open': noteSettingsOpen, 'keyboard-open': keyboardVisible, 'selecting-notes': selectionMode }" @pointerdown="onButtonPointerDown">
+  <div v-else class="notes-app" :class="{ 'desktop-window': desktopMode, 'desktop-note-open': desktopMode && mobilePane === 'editor' && !!activeNote, 'mobile-editor-open': mobilePane === 'editor', 'sidebar-open': sidebarOpen, 'mobile-writing': mobileEditing, 'note-settings-open': noteSettingsOpen, 'keyboard-open': keyboardVisible, 'selecting-notes': selectionMode }" @pointerdown="onButtonPointerDown">
+    <DesktopTitlebar v-if="desktopMode" />
     <header v-if="section === 'notes'" class="mobile-header">
       <template v-if="selectionMode">
         <button class="icon-button" type="button" aria-label="退出多选" @click="clearSelection"><X :size="24" /></button>
@@ -1545,7 +1554,7 @@ onBeforeUnmount(() => {
       </div>
       <template v-if="activeNote">
         <header class="editor-topbar">
-          <button class="icon-button mobile-back" type="button" :aria-label="mobileEditing ? '结束编辑' : '返回笔记列表'" :disabled="isTransitioning" @click="mobileEditing ? finishMobileEditing() : showNoteList()"><ArrowLeft :size="20" /></button>
+          <button class="icon-button mobile-back" type="button" :aria-label="mobileEditing ? '结束编辑' : '返回笔记列表'" :disabled="isTransitioning" @click="mobileLayout && mobileEditing ? finishMobileEditing() : showNoteList()"><ArrowLeft :size="20" /></button>
           <input v-if="mobileLayout" v-model="editorTitle" class="topbar-note-title" :placeholder="titlePlaceholder" aria-label="笔记标题" :disabled="isTransitioning" @focus="mobileEditing = true" />
           <div v-else class="breadcrumb"><span>拾页</span><ChevronRight :size="14" /><span>{{ activeGroupName }}</span><ChevronRight :size="14" /><span class="breadcrumb-current">笔记</span></div>
           <div v-if="mobileEditing && activeNote.kind !== 'mindmap'" class="mobile-history"><button class="icon-button" aria-label="撤销编辑" :disabled="!richEditor?.canUndo" @pointerdown.prevent @click="richEditor?.undo()"><Undo2 :size="22" /></button><button class="icon-button" aria-label="重做编辑" :disabled="!richEditor?.canRedo" @pointerdown.prevent @click="richEditor?.redo()"><Redo2 :size="22" /></button></div>

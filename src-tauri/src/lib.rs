@@ -176,6 +176,21 @@ pub fn run() {
         .plugin(device::init())
         .setup(|app| {
             app.manage(Arc::new(Storage::open(app.path().app_data_dir()?)?));
+            #[cfg(windows)]
+            if let Some(window) = app.get_webview_window("main") {
+                use windows::Win32::Graphics::Dwm::{
+                    DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+                };
+                let preference = DWMWCP_ROUND;
+                unsafe {
+                    DwmSetWindowAttribute(
+                        window.hwnd()?,
+                        DWMWA_WINDOW_CORNER_PREFERENCE,
+                        (&preference as *const _) as *const _,
+                        std::mem::size_of_val(&preference) as u32,
+                    )?;
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

@@ -1,0 +1,121 @@
+@media (min-width: 761px) {
+  .notes-app.desktop-window {
+    position: relative;
+    grid-template-columns: 232px minmax(0, 1fr);
+    padding-top: 42px;
+    --brand: color-mix(in srgb, var(--user-accent) 38%, #90988d);
+    --sidebar-bg: #f5f5f3;
+    --app-bg: #f8f8f6;
+    --surface-soft: #fafaf8;
+    --brand-soft: color-mix(in srgb, var(--brand) 7%, var(--paper));
+    --brand-tint: color-mix(in srgb, var(--brand) 4%, var(--paper));
+    --brand-border: color-mix(in srgb, var(--brand) 20%, var(--line));
+    --brand-line: color-mix(in srgb, var(--brand) 35%, var(--line));
+    --primary-bg: color-mix(in srgb, var(--brand) 30%, var(--paper));
+    --primary-hover: color-mix(in srgb, var(--brand) 40%, var(--paper));
+    --brand-shadow: rgba(var(--shadow-rgb), .06);
+    --focus-ring: color-mix(in srgb, var(--brand) 26%, transparent);
+  }
+  :root[data-theme='dark'] .notes-app.desktop-window {
+    --brand: color-mix(in srgb, var(--user-accent) 34%, #778376);
+    --sidebar-bg: #1c1e1c;
+    --app-bg: #191b19;
+    --surface-soft: #202220;
+    --brand-soft: color-mix(in srgb, var(--brand) 10%, var(--paper));
+    --brand-tint: color-mix(in srgb, var(--brand) 6%, var(--paper));
+    --primary-bg: color-mix(in srgb, var(--brand) 23%, var(--paper));
+    --primary-hover: color-mix(in srgb, var(--brand) 32%, var(--paper));
+  }
+  .desktop-titlebar {
+    position: fixed;
+    z-index: 100;
+    inset: 0 0 auto;
+    display: flex;
+    height: 42px;
+    align-items: center;
+    border-bottom: 1px solid var(--line);
+    background: #f5f5f3;
+    user-select: none;
+  }
+  :root[data-theme='dark'] .desktop-titlebar { background: #1c1e1c; }
+  .desktop-titlebar-brand {
+    display: flex;
+    width: 232px;
+    flex: 0 0 232px;
+    align-items: center;
+    gap: 6px;
+    padding-left: 19px;
+    font-size: 13px;
+    font-weight: 650;
+    app-region: drag;
+  }
+  .desktop-titlebar-brand span { color: var(--annotation-ink); font-size: 11px; font-weight: 400; }
+  .desktop-titlebar-drag { height: 100%; flex: 1; app-region: drag; }
+  .desktop-window-controls { display: flex; height: 100%; }
+  .desktop-window-controls button {
+    display: grid;
+    width: 46px;
+    height: 100%;
+    place-items: center;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+  .desktop-window-controls button:hover { background: rgba(var(--shadow-rgb), .08); }
+  .desktop-window-controls .desktop-close:hover { color: white; background: #b84b42; }
+  .desktop-window .sidebar { grid-column: 1; grid-row: 1; padding-top: 21px; box-shadow: inset -1px 0 var(--line); }
+  .desktop-window .brand-lockup { display: none; }
+  .desktop-window .note-list-pane,
+  .desktop-window .editor-pane,
+  .desktop-window .todo-page { grid-column: 2; grid-row: 1; }
+  .notes-app.desktop-window > .todo-page { grid-column: 2; }
+  .desktop-window .note-list-pane { padding: 32px 38px 24px; border-right: 0; }
+  .desktop-window.desktop-note-open .note-list-pane,
+  .desktop-window .editor-pane { display: none; }
+  .desktop-window.desktop-note-open .editor-pane { display: flex; padding: 0 clamp(34px, 5vw, 80px); }
+  .desktop-window .mobile-back { display: grid; margin-right: 4px; }
+  .desktop-window .editor-topbar { justify-content: flex-start; }
+  .desktop-window .editor-topbar .breadcrumb { flex: 1; }
+  .desktop-window .editor-content-shell { overflow-x: hidden; }
+  .desktop-window .note-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); align-content: start; gap: 12px; padding: 1px 5px 16px; }
+  .desktop-window .note-card { min-height: 112px; padding: 16px; border-color: var(--line); background: var(--paper); }
+  .desktop-window .note-card.selected { border-color: var(--brand-border); box-shadow: none; }
+  .desktop-window .note-card-icon { color: var(--ink); border-color: var(--line); background: var(--surface-soft); }
+  .desktop-window .list-pane-header { min-width: 0; }
+  .desktop-window .create-actions { flex: 0 0 auto; white-space: nowrap; }
+  .desktop-window .create-note-button { min-height: 38px; border: 1px solid var(--brand-border); box-shadow: none; }
+  .desktop-window .search-box { margin-top: 26px; }
+  .desktop-window .sidebar-settings { border-radius: 14px; }
+  .desktop-window .nav-item.selected,
+  .desktop-window .group-row.selected .group-select { box-shadow: inset 3px 0 var(--brand-line); }
+  .desktop-window :is(button, input, select, textarea):focus-visible { outline-color: var(--brand-border); }
+  .desktop-window .todo-add,
+  .desktop-window .todo-compose-actions .todo-submit,
+  .desktop-window .todo-calendar button.chosen,
+  .desktop-window .todo-picker-actions .primary { background: var(--primary-bg); color: var(--ink); }
+  .desktop-window .note-list,
+  .desktop-window .group-nav,
+  .desktop-window .editor-content-shell,
+  .desktop-window .mindmap-outline-viewport,
+  .desktop-window .mindmap-tree-viewport,
+  .desktop-window .settings-scroll {
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--ink) 22%, transparent) transparent;
+    scrollbar-gutter: stable;
+  }
+  .desktop-window ::-webkit-scrollbar { width: 8px; height: 8px; }
+  .desktop-window ::-webkit-scrollbar-track { background: transparent; }
+  .desktop-window ::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+  .desktop-window ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: color-mix(in srgb, var(--ink) 25%, transparent); background-clip: padding-box; }
+  .desktop-window ::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--ink) 40%, transparent); }
+  .desktop-window .mindmap-outline-viewport,
+  .desktop-window .mindmap-tree-viewport { overflow-x: auto; }
+  .desktop-window .settings-page { left: 232px; }
+  .desktop-window .sidebar,
+  .desktop-window .note-card,
+  .desktop-window .search-box,
+  .desktop-window .bottom-sheet,
+  .desktop-window .settings-card { corner-shape: squircle; }
+}

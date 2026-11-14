@@ -22,6 +22,13 @@ const emit = defineEmits<{
 }>()
 
 const collapsed = computed(() => props.collapsedIds.has(props.node.id))
+
+function editRow(event: MouseEvent) {
+  emit('select', props.node.id)
+  if (props.editable && !(event.target instanceof HTMLTextAreaElement)) {
+    (event.currentTarget as HTMLElement).querySelector('textarea')?.focus()
+  }
+}
 </script>
 
 <template>
@@ -35,7 +42,7 @@ const collapsed = computed(() => props.collapsedIds.has(props.node.id))
     <div
       class="mindmap-outline-row"
       :class="{ 'mindmap-outline-row-root': depth === 0, 'is-selected': selectedId === node.id }"
-      @click="emit('select', node.id)"
+      @click="editRow"
     >
       <button
         v-if="node.children.length"

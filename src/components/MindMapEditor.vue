@@ -97,6 +97,13 @@ function selectNode(id: string) {
   selectedId.value = id
 }
 
+function selectTreeNode(event: MouseEvent, id: string) {
+  selectNode(id)
+  if (props.editable && !(event.target instanceof HTMLTextAreaElement)) {
+    (event.currentTarget as HTMLElement).querySelector('textarea')?.focus()
+  }
+}
+
 async function revealSelection(focus = false) {
   await nextTick()
   const field = selectedField()
@@ -371,7 +378,7 @@ function beginEdit(event: PointerEvent) {
               :style="{ left: `${entry.x}px`, top: `${entry.y}px`, width: `${NODE_WIDTH}px`, height: `${NODE_HEIGHT}px` }"
               role="group"
               :aria-label="entry.depth === 0 ? '中心主题' : `第 ${entry.depth} 层分支`"
-              @click="selectNode(entry.node.id)"
+              @click="selectTreeNode($event, entry.node.id)"
             >
               <MindMapNodeField class="mindmap-tree-text" :id="entry.node.id" :text="entry.node.text" :editable="editable" :root="entry.depth === 0"
                 :label="entry.depth === 0 ? '中心主题内容' : `第 ${entry.depth} 层分支内容`" :rows="2"

@@ -3,5 +3,5 @@
   "identifier": "main-window",
   "description": "Local notes window; native commands expose only the app database and attachments.",
   "windows": ["main"],
-  "permissions": ["core:default", "core:window:allow-destroy"]
+  "permissions": ["core:default", "core:window:allow-destroy", "core:window:allow-close", "core:window:allow-minimize", "core:window:allow-toggle-maximize", "core:window:allow-start-dragging"]
 }

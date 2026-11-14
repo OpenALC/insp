@@ -33,6 +33,7 @@ function applyAccent(dark: boolean) {
   const style = document.documentElement.style
   const background = dark ? '#171b17' : '#ffffff'
   const rgb = [1, 3, 5].map(index => parseInt(color.slice(index, index + 2), 16)).join(', ')
+  style.setProperty('--user-accent', color)
   style.setProperty('--brand', color)
   style.setProperty('--brand-rgb', rgb)
   style.setProperty('--brand-strong', blend(color, dark ? '#ffffff' : '#000000', dark ? .64 : .56))
