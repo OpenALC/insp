@@ -70,7 +70,7 @@
   .desktop-window .editor-pane,
   .desktop-window .todo-page { grid-column: 2; grid-row: 1; }
   .notes-app.desktop-window > .todo-page { grid-column: 2; }
-  .desktop-window .note-list-pane { padding: 32px 38px 24px; border-right: 0; }
+  .desktop-window .note-list-pane { padding: 32px 38px 24px; overflow-y: auto; border-right: 0; }
   .desktop-window.desktop-note-open .note-list-pane,
   .desktop-window .editor-pane { display: none; }
   .desktop-window.desktop-note-open .editor-pane { display: flex; padding: 0 clamp(34px, 5vw, 80px); }
@@ -78,10 +78,20 @@
   .desktop-window .editor-topbar { justify-content: flex-start; }
   .desktop-window .editor-topbar .breadcrumb { flex: 1; }
   .desktop-window .editor-content-shell { overflow-x: hidden; }
-  .desktop-window .note-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); align-content: start; gap: 12px; padding: 1px 5px 16px; }
-  .desktop-window .note-card { min-height: 112px; padding: 16px; border-color: var(--line); background: var(--paper); }
+  .desktop-window .note-list { display: flex; width: 100%; flex: none; flex-direction: row; align-items: stretch; gap: 16px; overflow: visible; margin: 0; padding: 0 0 16px; }
+  .desktop-window .note-column { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 16px; }
+  .desktop-window .note-card { display: inline-flex; width: 100%; height: auto; min-height: 0; margin: 0; padding: 19px 18px 17px; vertical-align: top; border-color: var(--line); border-radius: 22px; background: var(--paper); }
   .desktop-window .note-card.selected { border-color: var(--brand-border); box-shadow: none; }
-  .desktop-window .note-card-icon { color: var(--ink); border-color: var(--line); background: var(--surface-soft); }
+  .desktop-window .note-card-icon,
+  .desktop-window .note-card-chevron { display: none; }
+  .desktop-window .note-card-content { width: 100%; gap: 12px; }
+  .desktop-window .note-card-topline strong { display: -webkit-box; font-size: 16px; line-height: 1.5; white-space: normal; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .desktop-window .note-preview { font-size: 14px; line-height: 1.65; -webkit-line-clamp: 5; }
+  .desktop-window .layout-list .note-preview { -webkit-line-clamp: 2; }
+  .desktop-window .rich-card-preview { width: 100%; max-height: 180px; overflow: hidden; font-size: 14px; line-height: 1.65; }
+  .desktop-window .rich-card-preview :is(p, h1, h2, h3, ul, ol, blockquote, pre) { margin: 0 0 6px; }
+  .desktop-window .rich-card-preview :is(h1, h2, h3) { font-size: 1em; }
+  .desktop-window .note-card-foot { width: 100%; margin-top: auto; padding-top: 8px; font-size: 11px; }
   .desktop-window .list-pane-header { min-width: 0; }
   .desktop-window .create-actions { flex: 0 0 auto; white-space: nowrap; }
   .desktop-window .create-note-button { min-height: 38px; border: 1px solid var(--brand-border); box-shadow: none; }
@@ -94,7 +104,7 @@
   .desktop-window .todo-compose-actions .todo-submit,
   .desktop-window .todo-calendar button.chosen,
   .desktop-window .todo-picker-actions .primary { background: var(--primary-bg); color: var(--ink); }
-  .desktop-window .note-list,
+  .desktop-window .note-list-pane,
   .desktop-window .group-nav,
   .desktop-window .editor-content-shell,
   .desktop-window .mindmap-outline-viewport,
@@ -112,10 +122,30 @@
   .desktop-window ::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--ink) 40%, transparent); }
   .desktop-window .mindmap-outline-viewport,
   .desktop-window .mindmap-tree-viewport { overflow-x: auto; }
-  .desktop-window .settings-page { left: 232px; }
+  .desktop-window .settings-page { top: 42px; left: 232px; }
   .desktop-window .sidebar,
   .desktop-window .note-card,
   .desktop-window .search-box,
   .desktop-window .bottom-sheet,
   .desktop-window .settings-card { corner-shape: squircle; }
 }
+
+html.desktop-note-transition::view-transition-group(note-container) {
+  overflow: hidden;
+  border-radius: 22px;
+  background: var(--paper);
+  animation-duration: 420ms;
+  animation-timing-function: cubic-bezier(.22, 1, .36, 1);
+}
+html.desktop-note-transition::view-transition-old(note-container),
+html.desktop-note-transition::view-transition-new(note-container) { mix-blend-mode: normal; }
+html.desktop-note-transition.note-container-enter::view-transition-old(note-container) { animation: desktop-card-out 420ms ease both; }
+html.desktop-note-transition.note-container-enter::view-transition-new(note-container) { animation: desktop-page-in 420ms ease both; }
+html.desktop-note-transition.note-container-return::view-transition-old(note-container) { animation: desktop-page-out 380ms ease both; }
+html.desktop-note-transition.note-container-return::view-transition-new(note-container) { animation: desktop-card-in 380ms ease both; }
+html.desktop-note-transition::view-transition-old(root),
+html.desktop-note-transition::view-transition-new(root) { animation: none; }
+@keyframes desktop-card-out { 0% { opacity: 1; } 28%, 100% { opacity: 0; } }
+@keyframes desktop-page-in { 0%, 55% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes desktop-page-out { 0% { opacity: 1; } 28%, 100% { opacity: 0; } }
+@keyframes desktop-card-in { 0%, 55% { opacity: 0; } 100% { opacity: 1; } }

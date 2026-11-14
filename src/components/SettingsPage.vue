@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import appInfo from '../../package.json'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { accentColor, setAccentColor } from '../appearance'
+import { platform } from '../platform'
 import { openSourceComponents } from '../open-source'
 import type { VaultController } from '../security/types'
 import ThemeSelect from './ThemeSelect.vue'
@@ -24,6 +26,17 @@ const importPicker = ref<HTMLInputElement>()
 const releaseVersion = ref('')
 const updateStatus = ref('')
 const checkingUpdate = ref(false)
+async function launchExternal(url: string) {
+  if (platform.capabilities.platform === 'harmonyos') {
+    window.open(url, '_blank', 'noopener,noreferrer')
+  } else {
+    await openUrl(url)
+  }
+}
+function openExternal(event: MouseEvent, url: string) {
+  event.preventDefault()
+  void launchExternal(url).catch(reason => { error.value = reason instanceof Error ? reason.message : String(reason) })
+}
 async function checkUpdate() {
   checkingUpdate.value = true
   updateStatus.value = ''
@@ -33,7 +46,11 @@ async function checkUpdate() {
     if (!response.ok) throw new Error(`检查失败（HTTP ${response.status}）`)
     const release = await response.json() as { tag_name: string }
     releaseVersion.value = release.tag_name
-    updateStatus.value = release.tag_name.replace(/^v/, '') === appInfo.version ? '已是最新版本' : '发现新版本，可前往 GitHub 下载'
+    if (release.tag_name.replace(/^v/, '') === appInfo.version) updateStatus.value = '已是最新版本'
+    else {
+      updateStatus.value = '发现新版本，已在浏览器打开下载页'
+      await launchExternal('https://github.com/OpenALC/insp/releases/latest')
+    }
   } catch (error) { updateStatus.value = error instanceof Error ? error.message : '暂时无法检查更新' }
   finally { checkingUpdate.value = false }
 }
@@ -88,12 +105,12 @@ async function copy() {
         <div class="settings-section">
           <div class="settings-row"><span>当前版本</span><span class="settings-value">v{{ appInfo.version }}</span></div>
           <button class="settings-row" :disabled="checkingUpdate" @click="checkUpdate"><Download :size="20" /><span>{{ checkingUpdate ? '正在检查…' : '获取更新' }}</span><span v-if="releaseVersion" class="settings-value">{{ releaseVersion }}</span><ChevronRight :size="17" /></button>
-          <a class="settings-row" href="https://github.com/OpenALC/insp" target="_blank" rel="noopener noreferrer"><Github :size="20" /><span>GitHub 仓库</span><span class="settings-value">github.com/OpenALC/insp</span><ChevronRight :size="17" /></a>
-          <a class="settings-row" href="https://github.com/OpenALC/insp/blob/main/LICENSE" target="_blank" rel="noopener noreferrer"><ShieldCheck :size="20" /><span>开源协议</span><span class="settings-value">MIT</span><ChevronRight :size="17" /></a>
+          <a class="settings-row" href="https://github.com/OpenALC/insp" target="_blank" rel="noopener noreferrer" @click="openExternal($event, 'https://github.com/OpenALC/insp')"><Github :size="20" /><span>GitHub 仓库</span><span class="settings-value">github.com/OpenALC/insp</span><ChevronRight :size="17" /></a>
+          <a class="settings-row" href="https://github.com/OpenALC/insp/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" @click="openExternal($event, 'https://github.com/OpenALC/insp/blob/main/LICENSE')"><ShieldCheck :size="20" /><span>开源协议</span><span class="settings-value">MIT</span><ChevronRight :size="17" /></a>
         </div>
         <p v-if="updateStatus" class="settings-page-description" role="status">{{ updateStatus }}</p>
         <h2>开源组件声明</h2>
-        <div class="settings-section"><a v-for="component in openSourceComponents" :key="component.url" class="settings-row license-row" :href="component.url" target="_blank" rel="noopener noreferrer"><span>{{ component.name }}</span><span class="settings-value">{{ component.license }}</span><ChevronRight :size="17" /><small>{{ component.url }}</small></a></div>
+        <div class="settings-section"><a v-for="component in openSourceComponents" :key="component.url" class="settings-row license-row" :href="component.url" target="_blank" rel="noopener noreferrer" @click="openExternal($event, component.url)"><span>{{ component.name }}</span><span class="settings-value">{{ component.license }}</span><ChevronRight :size="17" /><small>{{ component.url }}</small></a></div>
       </template>
       <template v-else-if="view === 'import'">
         <p class="settings-page-description">选择 Markdown、纯文本、小米笔记“导出为副本”的 ZIP，或图片。笔记和图片会加入本机加密空间。</p>

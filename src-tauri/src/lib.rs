@@ -174,6 +174,7 @@ pub fn run() {
     }));
     builder
         .plugin(device::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             app.manage(Arc::new(Storage::open(app.path().app_data_dir()?)?));
             #[cfg(windows)]

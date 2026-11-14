@@ -117,6 +117,7 @@ async function noteContainerTransition(card: HTMLElement, closing: boolean, upda
   const incomingImage = sharedImage ? (closing ? cardImage : editorImage) : null
   const direction = closing ? 'note-container-return' : 'note-container-enter'
   document.documentElement.classList.add(direction)
+  if (desktopMode) document.documentElement.classList.add('desktop-note-transition')
   outgoing.style.viewTransitionName = 'note-container'
   if (outgoingImage) outgoingImage.style.viewTransitionName = 'note-image'
   const transition = document.startViewTransition(async () => {
@@ -130,6 +131,7 @@ async function noteContainerTransition(card: HTMLElement, closing: boolean, upda
   incoming.style.removeProperty('view-transition-name')
   incomingImage?.style.removeProperty('view-transition-name')
   document.documentElement.classList.remove(direction)
+  document.documentElement.classList.remove('desktop-note-transition')
   return true
 }
 
@@ -367,11 +369,13 @@ async function handleVisibility() {
 }
 
 const mobileLayout = ref(window.matchMedia('(max-width: 760px)').matches)
+const desktopColumnCount = ref(window.innerWidth >= 1600 ? 4 : window.innerWidth >= 1180 ? 3 : 2)
 const viewportHeight = ref(window.innerHeight)
 let fullViewportHeight = viewportHeight.value
 let viewportWidth = window.innerWidth
 function updateViewport() {
   mobileLayout.value = window.matchMedia('(max-width: 760px)').matches
+  desktopColumnCount.value = window.innerWidth >= 1600 ? 4 : window.innerWidth >= 1180 ? 3 : 2
   const height = window.innerHeight
   if (viewportWidth !== window.innerWidth) {
     optionsRestingHeight.value = 0
@@ -543,6 +547,12 @@ const filteredNotes = computed(() => {
     if (filterKey.value.startsWith('group:') && note.groupId !== filterKey.value.slice(6)) return false
     return !query || `${note.title}\n${note.preview}`.toLocaleLowerCase('zh-CN').includes(query)
   })
+})
+const noteColumns = computed(() => {
+  const count = desktopMode && listLayout.value === 'grid' ? desktopColumnCount.value : 1
+  const columns: NoteSummary[][] = Array.from({ length: count }, () => [])
+  filteredNotes.value.forEach((note, index) => columns[index % count].push(note))
+  return columns
 })
 const currentFilterName = computed(() => {
   if (filterKey.value === 'private') return '隐私笔记'
@@ -1015,7 +1025,7 @@ async function openNote(noteId: string, sourceCard: HTMLElement) {
       await nextTick()
       if (mobileLayout.value) await afterPaint()
     }
-    if (mobileLayout.value && await noteContainerTransition(sourceCard, false, async () => {
+    if ((mobileLayout.value || desktopMode) && await noteContainerTransition(sourceCard, false, async () => {
       mobilePane.value = 'editor'
       await nextTick()
     })) return
@@ -1250,13 +1260,13 @@ async function deleteTodo(id: string) {
 
 async function showNoteList() {
   await runTransition(async () => {
-    const card = activeNote.value && mobileLayout.value ? noteCard(activeNote.value.id, true) : null
+    const card = activeNote.value && (mobileLayout.value || desktopMode) ? noteCard(activeNote.value.id, mobileLayout.value) : null
     if (card && await noteContainerTransition(card, true, async () => {
       mobilePane.value = 'list'
       noteSettingsOpen.value = false
       await nextTick()
     })) return
-    const flight = card ? noteFlight(card, true) : null
+    const flight = card && mobileLayout.value ? noteFlight(card, true) : null
     await flight?.run()
     mobilePane.value = 'list'
     noteSettingsOpen.value = false
@@ -1515,7 +1525,8 @@ onBeforeUnmount(() => {
 
       <div v-if="isLoading" class="list-loading" role="status"><span class="loading-orbit"></span><span>正在打开本地笔记…</span></div>
       <div v-else-if="filteredNotes.length" class="note-list">
-        <button v-for="note in filteredNotes" :key="note.id" class="note-card" :data-note-id="note.id" :class="{ selected: !selectionMode && activeNote?.id === note.id, 'multi-selected': selectedNoteIds.has(note.id) }" :aria-pressed="selectionMode ? selectedNoteIds.has(note.id) : undefined" :disabled="isTransitioning" @pointerdown="notePointerDown($event, note.id)" @pointermove="notePointerMove" @pointerup="notePointerEnd" @pointercancel="notePointerEnd" @contextmenu="noteContextMenu($event, note.id)" @click="noteCardClick($event, note.id)">
+        <div v-for="(column, columnIndex) in noteColumns" :key="columnIndex" class="note-column">
+        <button v-for="note in column" :key="note.id" class="note-card" :data-note-id="note.id" :class="{ selected: !selectionMode && activeNote?.id === note.id, 'multi-selected': selectedNoteIds.has(note.id) }" :aria-pressed="selectionMode ? selectedNoteIds.has(note.id) : undefined" :disabled="isTransitioning" @pointerdown="notePointerDown($event, note.id)" @pointermove="notePointerMove" @pointerup="notePointerEnd" @pointercancel="notePointerEnd" @contextmenu="noteContextMenu($event, note.id)" @click="noteCardClick($event, note.id)">
           <span v-if="selectionMode" class="note-selection-mark"><Check v-if="selectedNoteIds.has(note.id)" :size="16" /></span>
           <span class="note-card-icon"><Workflow v-if="note.kind === 'mindmap'" :size="17" /><ListTodo v-else-if="note.kind === 'todo'" :size="17" /><FileText v-else :size="17" /></span>
           <span class="note-card-content">
@@ -1527,6 +1538,7 @@ onBeforeUnmount(() => {
           </span>
           <ChevronRight class="note-card-chevron" :size="15" />
         </button>
+        </div>
       </div>
       <div v-else class="list-empty">
         <div class="empty-illustration"><FileText :size="25" /></div>

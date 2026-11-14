@@ -133,6 +133,7 @@ button.settings-row { cursor: pointer; }
   .mobile-group-filters button.active { background: var(--paper); font-weight: 600; }
   .list-meta { display: none; }
   .note-list { display: block; overflow: visible; columns: 2; column-gap: 12px; margin: 0; padding: 0; }
+  .note-column { display: contents; }
   .note-list, .list-empty { touch-action: pan-y pinch-zoom; }
   .note-card, .note-card.selected { display: inline-flex; flex-direction: column; width: 100%; height: auto; margin: 0 0 12px; padding: 19px 16px 15px; break-inside: avoid; text-align: left; color: var(--ink); border: 0; border-radius: 18px; box-shadow: none; background: var(--paper); transform: none; transition: transform .18s var(--motion-out), background .18s; }
   .note-card:active { transform: scale(.97); }
